@@ -1,0 +1,76 @@
+Primary User Type: Interest Enthusiasts
+ Niche: Travel Enthusiasts Documenting Adventures and Recommendations
+
+1. Niche Definition
+Travel Enthusiasts want to capture and share their journeys—from hidden-gem food stalls in Bangkok to sunrise hikes in the Rockies—with friends and fellow explorers. SnapConnect will use RAG to surface ultra-relevant tips, craft vivid captions, and curate mini-guides that turn every snap into both a memory and a resource for other travelers.
+
+2. Six RAG-Powered User Stories
+Local Insight Injector
+ “As a travel enthusiast, I want AI to suggest off-the-beaten-path spots near my current location (e.g., street markets, viewpoints) so my snaps can double as insider guides.”
+
+
+RAG flow: Geolocation + user interests → query travel KB & user history → surface 3–5 bespoke recommendations.
+
+
+Story Snippet Generator
+ “As a travel enthusiast, I want AI to assemble a short narrative for my series of snaps (e.g., check-in, meal, activity) so I can post a cohesive mini-travelogue instantly.”
+
+
+RAG flow: Ingest selected media + timestamps → retrieve relevant facts (opening hours, local lore) → generate a 4–6 snap storyboard text.
+
+
+Caption Compass
+ “As a travel enthusiast, I want AI to craft evocative, location-aware captions (e.g., ‘Chasing the sunset over Santorini’s caldera’) that match both the scene and my personal travel style.”
+
+
+RAG flow: Image analysis + location metadata + profile style tags → generate 3 caption options.
+
+
+Culture & Cuisine Coach
+ “As a travel enthusiast, I want AI to recommend local dishes or cultural tips based on my snaps of restaurants or landmarks so I can share authentic foodie/culture snaps.”
+
+
+RAG flow: Image/location → lookup regional cuisine & etiquette database → suggest 2–3 captions or sticker groups.
+
+
+Flashback Explorer
+ “As a travel enthusiast, I want AI to remind me of trips I took on this date last year (or earlier) and suggest a fresh angle or update, so I can create nostalgia-driven throws.”
+
+
+RAG flow: Date-based retrieval from my travel logs → propose modernized caption or follow-up activity suggestion.
+
+
+Itinerary Snapshot
+ “As a travel enthusiast, I want AI to generate a concise visual itinerary snap (map snippet, bullet highlights) after I upload my travel plan, so I can quickly share what’s coming next.”
+
+
+RAG flow: Parse my plain-text itinerary or calendar → query map & points-of-interest → produce a single-snap infographic with key stops.
+
+
+
+3. Updated RAG-First Roadmap
+Phase
+Deliverable
+RAG Focus
+1
+Travel Profile & History Ingestion
+Ingest past trip metadata, tagged locations
+2
+Vector Store & KB Setup
+Index geo-tagged snaps, POI database, cuisine lore
+3
+Local Insight Injector & Caption Compass
+Geolocation + image → personalized suggestions
+4
+Story Snippet Generator & Itinerary Snapshot
+Multi-modal RAG: text itinerary + images → snaps
+5
+Culture & Cuisine Coach
+Knowledge-enhanced responses from travel KB
+6
+Flashback Explorer & Adaptive Feedback
+Date-based retrieval + user rating loop
+
+Rule: Fully complete each RAG path end-to-end (ingest → index → retrieve → generate → UI) before moving to the next.
+
+Everything else in the technical stack and success metrics remains as defined. This pivot to Travel Enthusiasts will ensure SnapConnect becomes the go-to AI-powered companion for adventurers everywhere.

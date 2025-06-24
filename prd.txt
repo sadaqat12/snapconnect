@@ -1,0 +1,94 @@
+Product Requirements Document (PRD)
+1. Executive Summary
+SnapConnect is a production‑ready, Snapchat‑style ephemeral messaging app enhanced with RAG-powered AI tailored for travel influencers & enthusiasts. In Phase 1, it delivers full clone functionality: disappearing snaps, AR filters, stories, group chat, and friend networks. In Phase 2, it integrates advanced AI: personalized travel insights, captions, story suggestions, and recommendations that bring each adventure to life.
+2. Goals & Objectives
+Core Parity: Reproduce Snapchat’s ephemeral messaging, camera effects, stories, and chat features.
+Travel Focus: Leverage RAG to empower travel enthusiasts with contextual, location-aware content.
+Production Ready: Deploy a stable, scalable app with <3 s latency for both core and AI features.
+Engagement & Retention: Drive higher sharing rates, session times, and daily returns through travel‑centric AI enhancements.
+3. Success Metrics
+Core Adoption: ≥ 70% of registered users send at least one snap or view one story daily.
+AI Feature Usage: ≥ 50% of active travel users leverage at least one RAG feature weekly.
+Latency: 95th percentile response time < 3 s for core and AI operations.
+Retention: ≥ 35% 7‑day retention, ≥ 20% 30‑day retention.
+User Satisfaction: ≥ 4.5/5 average rating on App Store reviews for AI suggestions.
+4. User Personas: Travel Enthusiasts
+Solo Explorer — Seeks hidden gems and local tips off the beaten path.
+Group Adventurer — Shares stories and itineraries with fellow travelers.
+Cultural Foodie — Documents regional cuisine and cultural insights.
+5. User Stories
+Phase 1: Core Clone
+Disappearing Snaps:
+"As a travel enthusiast, I want to send photos/videos that disappear after viewing so my feed stays fresh."
+AR Filters & Effects:
+"As a travel enthusiast, I want to overlay location stickers and fun travel-themed filters on my snaps."
+Authentication & Friend Management:
+"As a travel enthusiast, I need secure login and the ability to add friends or group travel buddies."
+Stories & Group Chat:
+"As a travel enthusiast, I want to post sequenced stories of my trip and chat with groups in real time."
+Phase 2: RAG Enhancements for Travel
+Local Insight Injector:
+"As a Solo Explorer, I want AI to suggest offbeat spots nearby so I can discover hidden gems."
+Caption Compass:
+"As a Cultural Foodie, I want AI to generate evocative, location-aware captions tailored to my style."
+Story Snippet Generator:
+"As a Group Adventurer, I want AI to compile my snaps into a cohesive mini-travelogue story."
+Culture & Cuisine Coach:
+"As a Cultural Foodie, I want AI to recommend local dishes or etiquette tips based on my snaps."
+Flashback Explorer:
+"As a Repeat Traveler, I want AI to remind me of past trips on this date with fresh caption ideas."
+Itinerary Snapshot:
+"As a Planner, I want AI to generate a visual itinerary snap from my trip plan."
+6. Functional Requirements
+Phase 1: Core Clone
+Ephemeral Messaging: Photo/video capture with time‑to‑live deletion and read receipts.
+Camera & AR: Expo Camera + ARKit overlays, stickers, text, and draw tools.
+Auth & Friends: Supabase Auth; search, add, remove friends; group management.
+Stories & Chat: Ephemeral stories; 1:1 and group chat; push notifications.
+Phase 2: RAG AI Layer
+User Profile & Context Storage: Supabase PostgreSQL + pgvector for travel history, preferences.
+Edge Functions: RAG orchestration: embed images/text, query vector index, call OpenAI GPT‑4.
+AI UIs: Caption suggestions, story storyboard generator, local insight panel, itinerary infographic.
+7. Non‑Functional Requirements
+Performance: Core actions < 2 s; AI suggestions < 3 s for 90% of requests.
+Scalability: Support 200k DAU with autoscaling on Supabase and Vercel.
+Security: End‑to‑end encryption for media in transit; ephemeral storage purge after TTL.
+Compliance: GDPR/CCPA data handling; clear data retention policies.
+8. Technical Architecture
+Frontend: React Native + Expo; NativeWind/Tailwind for UI; Zustand or Redux Toolkit for state.
+Realtime: Supabase Realtime for chat and story sync.
+Backend: Supabase (Auth, PostgreSQL + pgvector, Storage, Edge Functions).
+Hosting: Vercel for Edge Functions and static assets.
+AI Services: OpenAI GPT‑4 API for generation; pgvector similarity search.
+9. Data Model
+Users: id, name, email, travel_style_tags, preferences
+Friendships: user_id, friend_id, status
+Snaps: id, creator_id, recipient_ids, media_url, location, timestamp, expires_at
+Stories: id, creator_id, list<snap_id>, viewers
+Vectors: entity_id (snap or itinerary), vector_embedding, context_type
+10. Roadmap & Milestones
+Phase
+Features
+Timeline
+P1
+Disappearing snaps, AR, auth, friends, stories
+Q3 2025 (Sprints 1–4)
+P2A
+Local Insight, Caption Compass
+Q4 2025 (Sprints 5–7)
+P2B
+Story Snippet, Cuisine Coach, Flashback
+Q1 2026 (Sprints 8–10)
+Beta
+1k travel users, feedback cycle
+Q2 2026
+v1.0
+Performance tuning, broad release
+Q3 2026
+
+11. Risks & Mitigations
+Cold‑Start AI Data: Bootstrap with global travel KB; heuristic prompts.
+Latency Spikes: Introduce caching for popular queries; monitor Edge Function usage.
+Privacy & Compliance: Regular audits of ephemeral purge; user consent flows.
+
+SnapConnect PRD – Travel Enthusiasts Edition
