@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "react-native-css-interop": "^0.1.22"
+  }
+}

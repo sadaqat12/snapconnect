@@ -25,19 +25,19 @@
 - [x] Set up React Navigation (stack & bottom-tabs)
 
 ### 2.2 Initialize Backend
-- [ ] In Supabase dashboard, create new project `snapconnect-db`
-- [ ] Enable extensions:
-  - [ ] `pgvector`
-  - [ ] `uuid-ossp`
-- [ ] Create core tables:
+- [x] In Supabase dashboard, create new project `snapconnect`
+- [x] Enable extensions:
+  - [x] `pgvector`
+  - [x] `uuid-ossp`
+- [x] Create core tables:
   ```sql
   -- users, friendships, snaps, stories, vectors
   /* see PRD §9 Data Model */
   ```
-- [ ] Set up Supabase Auth (Email + OAuth providers)
+- [x] Set up Supabase Auth (Email + OAuth providers)
 
 ### 2.3 Environment Variables
-- [ ] Create `.env` in frontend root:
+- [x] Create `.env` in frontend root:
   ```env
   EXPO_SUPABASE_URL=your-supabase-url
   EXPO_SUPABASE_ANON_KEY=your-anon-key
@@ -48,8 +48,8 @@
 ## 🔐 3. Phase 1: Core Clone Features
 
 ### 3.1 Authentication & Friend Management
-- [ ] Build Sign-Up / Sign-In screens (email + OAuth)
-- [ ] Hook into Supabase Auth client
+- [x] Build Sign-Up / Sign-In screens (email + OAuth)
+- [x] Hook into Supabase Auth client
 - [ ] Create "Friends" context (Zustand store)
 - [ ] UI to search users by email/username → "Add Friend" button
 - [ ] Backend RPC for adding/removing friendships
