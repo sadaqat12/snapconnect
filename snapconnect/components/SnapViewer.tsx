@@ -56,9 +56,6 @@ export default function SnapViewer({ snap, isVisible, onClose, onSnapViewed }: S
             url: snap.media_url,
           });
         });
-
-      // Mark snap as read when opened
-      markSnapAsRead();
       
       // Start countdown animation
       Animated.timing(progressAnimation, {
@@ -67,13 +64,13 @@ export default function SnapViewer({ snap, isVisible, onClose, onSnapViewed }: S
         useNativeDriver: false,
       }).start(({ finished }) => {
         if (finished) {
-          handleClose();
+          handleSnapTimeout();
         }
       });
 
       // Auto-close after duration
       const timer = setTimeout(() => {
-        handleClose();
+        handleSnapTimeout();
       }, (snap.duration_seconds || 10) * 1000);
 
       return () => {
@@ -83,21 +80,23 @@ export default function SnapViewer({ snap, isVisible, onClose, onSnapViewed }: S
     }
   }, [isVisible]);
 
-  const markSnapAsRead = async () => {
-    try {
-      await SnapService.markSnapAsRead(snap.id!);
-      console.log('Marked snap as read:', snap.id);
-      // Notify parent that snap was viewed
-      onSnapViewed?.();
-    } catch (error) {
-      console.error('Error marking snap as read:', error);
+  const handleSnapTimeout = () => {
+    // Only handle timeout if the viewer is still visible
+    if (isVisible) {
+      handleClose();
     }
   };
 
   const handleClose = () => {
-    onClose();
-    // Ensure parent knows snap was viewed
+    // Always notify parent that snap was viewed before closing
     onSnapViewed?.();
+    onClose();
+  };
+
+  const handleTap = () => {
+    // Skip the snap animation and mark as viewed
+    progressAnimation.setValue(0);
+    handleClose();
   };
 
   const handleLoad = () => {
@@ -162,7 +161,7 @@ export default function SnapViewer({ snap, isVisible, onClose, onSnapViewed }: S
       visible={isVisible}
       transparent={true}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.container}>
         {/* Progress Bar */}
@@ -179,7 +178,7 @@ export default function SnapViewer({ snap, isVisible, onClose, onSnapViewed }: S
         />
 
         {/* Media Content */}
-        <Pressable style={styles.mediaContainer} onPress={onClose}>
+        <Pressable style={styles.mediaContainer} onPress={handleTap}>
           {renderMedia()}
 
           {/* Loading Indicator */}

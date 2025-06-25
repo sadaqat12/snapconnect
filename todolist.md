@@ -50,17 +50,17 @@
 ### 3.1 Authentication & Friend Management
 - [x] Build Sign-Up / Sign-In screens (email + OAuth)
 - [x] Hook into Supabase Auth client
-- [ ] Create "Friends" context (Zustand store)
-- [ ] UI to search users by email/username → "Add Friend" button
-- [ ] Backend RPC for adding/removing friendships
+- [x] Create "Friends" context (Zustand store)
+- [x] UI to search users by email/username → "Add Friend" button
+- [x] Backend RPC for adding/removing friendships
 
 ### 3.2 Camera + Ephemeral Snaps
-- [ ] Integrate Expo Camera component
-- [ ] Build "Snap" screen: photo / video capture
-- [ ] Upload media to Supabase Storage and obtain public URL
-- [ ] Insert snap record (with `expires_at`) into Supabase table
-- [ ] Build "Inbox" screen: list of incoming snaps
-- [ ] On view, mark read and schedule deletion (client + server TTL)
+- [x] Integrate Expo Camera component
+- [x] Build "Snap" screen: photo / video capture
+- [x] Upload media to Supabase Storage and obtain public URL
+- [x] Insert snap record (with `expires_at`) into Supabase table
+- [x] Build "Inbox" screen: list of incoming snaps
+- [x] On view, mark read and schedule deletion (client + server TTL)
 
 ### 3.3 AR Filters & Effects
 - [ ] Integrate basic sticker overlays (PNG assets)

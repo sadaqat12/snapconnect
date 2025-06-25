@@ -57,6 +57,21 @@ export default function FriendsScreen() {
 
   useEffect(() => {
     loadData();
+
+    // Set up periodic cleanup of old snaps
+    const cleanupInterval = setInterval(async () => {
+      try {
+        await SnapService.cleanupOldSnaps();
+        // Only reload data if cleanup was successful
+        await loadData();
+      } catch (error) {
+        console.error('Periodic cleanup error:', error);
+      }
+    }, 5 * 60 * 1000); // Run every 5 minutes
+
+    return () => {
+      clearInterval(cleanupInterval);
+    };
   }, []);
 
   const loadData = async () => {
@@ -215,8 +230,22 @@ export default function FriendsScreen() {
             return friend;
           })
         );
-      } catch (error) {
-        console.error('Error marking snap as read:', error);
+
+        // Close the viewer
+        handleCloseSnap();
+      } catch (error: any) {
+        // If the snap was already deleted, just update local state
+        if (error.code === 'PGRST116') {
+          setFriendsWithSnaps(prev => 
+            prev.map(friend => ({
+              ...friend,
+              unreadSnaps: friend.unreadSnaps.filter(snap => snap.id !== selectedSnap.id),
+            }))
+          );
+          handleCloseSnap();
+        } else {
+          console.error('Error marking snap as read:', error);
+        }
       }
     }
   };

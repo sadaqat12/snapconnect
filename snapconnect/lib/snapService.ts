@@ -227,7 +227,7 @@ export class SnapService {
   }
 
   /**
-   * Get snaps sent to user
+   * Get snaps sent to user that they haven't read yet
    */
   static async getReceivedSnaps(): Promise<SnapData[]> {
     try {
@@ -238,7 +238,8 @@ export class SnapService {
         .from('snaps')
         .select('*')
         .contains('recipient_ids', [user.id])
-        .not('read_by', 'cs', `{${user.id}}`) // Filter out snaps already read by current user
+        .not('read_by', 'cs', `{${user.id}}`) // Only get snaps not read by current user
+        .gte('expires_at', new Date().toISOString()) // Only get non-expired snaps
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -255,7 +256,7 @@ export class SnapService {
   }
 
   /**
-   * Mark snap as read
+   * Mark snap as read for current user
    */
   static async markSnapAsRead(snapId: string): Promise<void> {
     try {
@@ -265,23 +266,40 @@ export class SnapService {
       // Get current snap
       const { data: snap, error: fetchError } = await supabase
         .from('snaps')
-        .select('read_by')
+        .select('read_by, recipient_ids')
         .eq('id', snapId)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        // If snap not found, it might have been deleted already
+        if (fetchError.code === 'PGRST116') {
+          console.log(`Snap ${snapId} was already deleted`);
+          return;
+        }
+        throw fetchError;
+      }
 
       // Add user to read_by array if not already there
       const readBy = snap.read_by || [];
       if (!readBy.includes(user.id)) {
         readBy.push(user.id);
 
-        const { error: updateError } = await supabase
-          .from('snaps')
-          .update({ read_by: readBy })
-          .eq('id', snapId);
+        // Only delete the snap if all recipients have read it
+        const allRecipientsRead = snap.recipient_ids.every((id: string) => readBy.includes(id));
+        
+        if (allRecipientsRead) {
+          console.log('All recipients have viewed the snap, deleting:', snapId);
+          await this.deleteSnap(snapId);
+        } else {
+          // Only update read_by if we're not deleting the snap
+          const { error: updateError } = await supabase
+            .from('snaps')
+            .update({ read_by: readBy })
+            .eq('id', snapId);
 
-        if (updateError) throw updateError;
+          if (updateError) throw updateError;
+          console.log(`Snap ${snapId} marked as read by ${user.id}, ${readBy.length}/${snap.recipient_ids.length} recipients have viewed it`);
+        }
       }
     } catch (error) {
       console.error('Mark snap as read error:', error);
@@ -300,23 +318,32 @@ export class SnapService {
       // Get snap details first
       const { data: snap, error: fetchError } = await supabase
         .from('snaps')
-        .select('media_url, creator_id')
+        .select('media_url, creator_id, recipient_ids')
         .eq('id', snapId)
         .single();
 
       if (fetchError) throw fetchError;
-      if (snap.creator_id !== user.id) throw new Error('Not authorized to delete this snap');
 
-      // Extract file path from URL
-      const url = new URL(snap.media_url);
-      const filePath = url.pathname.split('/').slice(-2).join('/'); // Get user_id/filename
+      // Check if user is authorized (either creator or recipient)
+      const isCreator = snap.creator_id === user.id;
+      const isRecipient = snap.recipient_ids.includes(user.id);
+      if (!isCreator && !isRecipient) {
+        throw new Error('Not authorized to delete this snap');
+      }
 
-      // Delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('media')
-        .remove([filePath]);
+      // Only creator can delete the media from storage
+      if (isCreator) {
+        // Extract file path from URL
+        const url = new URL(snap.media_url);
+        const filePath = url.pathname.split('/').slice(-2).join('/'); // Get user_id/filename
 
-      if (storageError) console.warn('Storage deletion error:', storageError);
+        // Delete from storage
+        const { error: storageError } = await supabase.storage
+          .from('media')
+          .remove([filePath]);
+
+        if (storageError) console.warn('Storage deletion error:', storageError);
+      }
 
       // Delete snap record
       const { error: deleteError } = await supabase
@@ -339,11 +366,13 @@ export class SnapService {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('User not authenticated');
 
-      // Get all unread snaps
+      // Get all snaps that are either:
+      // 1. Expired (past expires_at)
+      // 2. Unread but older than 24 hours
       const { data: snaps, error } = await supabase
         .from('snaps')
         .select('*')
-        .eq('read_by', '{}')
+        .or(`expires_at.lte.${new Date().toISOString()},and(read_by.eq.{},created_at.lte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()})`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -352,7 +381,7 @@ export class SnapService {
       for (const snap of snaps || []) {
         try {
           await this.deleteSnap(snap.id);
-          console.log('Deleted old snap:', snap.id);
+          console.log('Deleted old/expired snap:', snap.id);
         } catch (error) {
           console.error('Error deleting snap:', snap.id, error);
         }
