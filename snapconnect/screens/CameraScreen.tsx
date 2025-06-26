@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert, Image, Platform, ActivityIndicator, Modal, FlatList, TextInput } from 'react-native';
-import { CameraView, Camera } from 'expo-camera';
+import { CameraView, Camera, VideoQuality, VideoCodec } from 'expo-camera';
+import { Video, ResizeMode } from 'expo-av';
+import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { supabase } from '../lib/supabase';
 import { SnapService } from '../lib/snapService';
@@ -19,9 +21,9 @@ export default function CameraScreen() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [capturedMediaType, setCapturedMediaType] = useState<'photo' | 'video'>('photo');
   const [pressStartTime, setPressStartTime] = useState<number>(0);
+  const [isImagePickerActive, setIsImagePickerActive] = useState(false);
   const shouldStartRecordingRef = useRef<boolean>(false);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const recordingPromiseRef = useRef<Promise<any> | null>(null);
   const cameraRef = useRef<any>(null);
 
   // New state for friend selection
@@ -33,6 +35,11 @@ export default function CameraScreen() {
 
   // Check if running in simulator
   const isSimulator = Constants.isDevice === false;
+
+  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+  const [minRecordingDuration] = useState<number>(500); // Minimum 500ms recording duration
+
+
 
   useEffect(() => {
     if (isSimulator) {
@@ -62,17 +69,28 @@ export default function CameraScreen() {
     setIsRecording(true);
     Alert.alert('🎥 Simulator Mode', 'Mock video recording started! On a real device, this would record actual video.');
     
-    // Auto-stop after 3 seconds for demo
-    setTimeout(() => {
-      setIsRecording(false);
-      const mockVideoUrl = `https://picsum.photos/400/800?random=${Date.now()}`;
-      setCapturedMedia(mockVideoUrl);
-      setCapturedMediaType('video');
-      setIsPreview(true);
-    }, 3000);
+    // Don't auto-stop - let the user control when to stop
+    // The timeout-based auto-stop was causing issues with user interaction
+  };
+
+  const stopRecordingSimulator = () => {
+    if (!isRecording) return;
+    
+    setIsRecording(false);
+    const mockVideoUrl = `https://picsum.photos/400/800?random=${Date.now()}`;
+    setCapturedMedia(mockVideoUrl);
+    setCapturedMediaType('video');
+    setIsPreview(true);
+    console.log('📱 Simulator: Mock video preview showing');
   };
 
   const handlePressIn = () => {
+    // Don't handle press if ImagePicker is active
+    if (isImagePickerActive) {
+      console.log('🚫 Ignoring press - ImagePicker is active');
+      return;
+    }
+    
     console.log('🔴 PRESS IN DETECTED');
     setPressStartTime(Date.now());
     shouldStartRecordingRef.current = true;
@@ -80,7 +98,7 @@ export default function CameraScreen() {
     // Start recording after 300ms hold (like Snapchat)
     recordingTimeoutRef.current = setTimeout(() => {
       console.log('⏰ TIMEOUT REACHED - shouldStartRecording:', shouldStartRecordingRef.current);
-      if (shouldStartRecordingRef.current) {
+      if (shouldStartRecordingRef.current && !isImagePickerActive) {
         console.log('🎥 STARTING RECORDING');
         startRecording();
       }
@@ -88,6 +106,12 @@ export default function CameraScreen() {
   };
 
   const handlePressOut = () => {
+    // Don't handle press if ImagePicker is active
+    if (isImagePickerActive) {
+      console.log('🚫 Ignoring press out - ImagePicker is active');
+      return;
+    }
+    
     console.log('🔵 PRESS OUT DETECTED');
     const pressDuration = Date.now() - pressStartTime;
     console.log('⏱️ Press duration:', pressDuration, 'ms, isRecording:', isRecording);
@@ -101,16 +125,18 @@ export default function CameraScreen() {
     
     shouldStartRecordingRef.current = false;
     
-    if (pressDuration < 300 && !isRecording) {
-      // Quick tap - take photo
-      console.log('📸 QUICK TAP - taking photo');
-      takePicture();
-    } else if (isRecording) {
-      // Was recording - stop it
+    if (isRecording) {
+      // If we're currently recording, stop it regardless of duration
       console.log('🛑 STOPPING RECORDING');
       stopRecording();
+    } else if (pressDuration < 300) {
+      // Quick tap and not recording - take photo
+      console.log('📸 QUICK TAP - taking photo');
+      takePicture();
     } else {
-      console.log('❓ No action taken - duration:', pressDuration, 'isRecording:', isRecording);
+      // Long press but recording never started (likely an error)
+      console.log('❓ Long press but recording never started - taking photo as fallback');
+      takePicture();
     }
     
     setPressStartTime(0);
@@ -140,80 +166,46 @@ export default function CameraScreen() {
   };
 
   const startRecording = async () => {
+    console.log('🎬 startRecording called, isSimulator:', isSimulator, 'isRecording:', isRecording);
+    
     if (isSimulator) {
       startRecordingSimulator();
       return;
     }
 
-    if (cameraRef.current && !isRecording) {
-      try {
-        setIsRecording(true);
-        console.log('Starting video recording...');
-        
-        // Start recording with optimized settings
-        recordingPromiseRef.current = cameraRef.current.recordAsync({
-          quality: '720p',
-          maxDuration: 30,
-          mute: false,
-          // Use lower bitrate for faster processing
-          videoBitrate: 2500000, // 2.5 Mbps
-        });
+    // Use ImagePicker for reliable video recording
+    try {
+      setIsImagePickerActive(true); // Prevent press handler interference
+      console.log('🎥 Opening video recorder...');
+      
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        quality: 0.8,
+        videoMaxDuration: 30,
+      });
 
-        console.log('🎬 Recording started successfully');
-        
-      } catch (error) {
-        console.error('Recording start error:', error);
-        Alert.alert('Error', 'Failed to start video recording');
-        setIsRecording(false);
+      if (!result.canceled && result.assets[0]) {
+        const video = result.assets[0];
+        console.log('🎉 Video recorded successfully!', video.uri);
+        setCapturedMedia(video.uri);
+        setCapturedMediaType('video');
+        setIsPreview(true);
+      } else {
+        console.log('❌ Video recording cancelled');
       }
+    } catch (error) {
+      console.error('Video recording error:', error);
+      Alert.alert('Error', 'Failed to record video');
+    } finally {
+      setIsImagePickerActive(false); // Re-enable press handlers
     }
   };
 
   const stopRecording = async () => {
-    if (isSimulator) {
-      return;
-    }
-
-    if (cameraRef.current && isRecording) {
-      console.log('Stopping video recording...');
-      setIsRecording(false);
-      
-      try {
-        // First stop the recording
-        cameraRef.current.stopRecording();
-        console.log('📹 Stop recording command sent');
-        
-        // Then wait for the recording promise to resolve
-        if (recordingPromiseRef.current) {
-          try {
-            console.log('⏳ Waiting for video result...');
-            const video = await recordingPromiseRef.current;
-            
-            if (video?.uri) {
-              console.log('🎉 Video recorded successfully! URI:', video.uri);
-              setCapturedMedia(video.uri);
-              setCapturedMediaType('video');
-              setIsPreview(true);
-              console.log('📱 Video preview showing');
-            } else {
-              console.log('❌ No valid video result');
-              showMockVideoPreview();
-            }
-          } catch (error) {
-            console.error('Error processing video:', error);
-            showMockVideoPreview();
-          }
-          
-          recordingPromiseRef.current = null;
-        } else {
-          console.log('❌ No recording promise found');
-          showMockVideoPreview();
-        }
-      } catch (error) {
-        console.error('Error stopping recording:', error);
-        showMockVideoPreview();
-      }
-    }
+    // This function is no longer needed since ImagePicker handles everything
+    // But we keep it for compatibility with the existing press handlers
+    console.log('🛑 stopRecording called - but using ImagePicker now');
   };
 
   const showMockVideoPreview = () => {
@@ -292,15 +284,14 @@ export default function CameraScreen() {
       recordingTimeoutRef.current = null;
     }
     
-    // Clean up recording promise
-    recordingPromiseRef.current = null;
-    
     setCapturedMedia(null);
     setIsPreview(false);
     setIsUploading(false);
     setUploadProgress('');
     setCapturedMediaType('photo');
     setIsRecording(false);
+    setRecordingStartTime(0); // Reset recording start time
+    // Recording promise removed since we're using file-based approach
     shouldStartRecordingRef.current = false;
     setPressStartTime(0);
   };
@@ -590,7 +581,18 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.previewContainer}>
-          <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+          {capturedMediaType === 'video' ? (
+            <Video
+              source={{ uri: capturedMedia }}
+              style={styles.previewImage}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={true}
+              isLooping={true}
+              useNativeControls={false}
+            />
+          ) : (
+            <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+          )}
           
           <View style={styles.previewOverlay}>
             {/* Header */}
