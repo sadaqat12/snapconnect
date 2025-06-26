@@ -11,6 +11,9 @@ import { StoryService } from '../lib/storyService';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system';
 import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
+import ARFilterPanel, { ARFilter, ARElement } from '../components/ARFilterPanel';
+import AROverlay from '../components/AROverlay';
+import ViewShot, { captureRef } from 'react-native-view-shot';
 
 export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -34,6 +37,14 @@ export default function CameraScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Friend[]>([]);
   const { friends, searchUsers, fetchFriends } = useFriendsStore();
+
+  // AR Filters state
+  const [showARPanel, setShowARPanel] = useState(false);
+  const [arElements, setArElements] = useState<ARElement[]>([]);
+  const [activeFilter, setActiveFilter] = useState<ARFilter | null>(null);
+  
+  // Ref for capturing preview with overlays
+  const previewRef = useRef<any>(null);
 
   // Check if running in simulator
   const isSimulator = Constants.isDevice === false;
@@ -384,16 +395,39 @@ export default function CameraScreen() {
 
     try {
       setIsUploading(true);
+      let finalMediaUri = capturedMedia;
+      
+      // If there are AR elements, capture the preview with overlays
+      if (arElements.length > 0) {
+        setUploadProgress('Applying AR effects...');
+        try {
+          // Add a small delay to ensure the view is fully rendered
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          if (previewRef.current) {
+            // Use ViewShot capture method
+            const capturedUri = await previewRef.current.capture();
+            finalMediaUri = capturedUri;
+            console.log('✅ Captured preview with AR elements:', capturedUri);
+          } else {
+            console.log('⚠️ Preview ref not available, using original media');
+          }
+        } catch (captureError) {
+          console.error('❌ Failed to capture AR overlay:', captureError);
+          console.log('📷 Falling back to original media without AR effects');
+          // Continue with original media if capture fails
+        }
+      }
 
       if (!isSimulator) {
         // Save to gallery first
-        await MediaLibrary.saveToLibraryAsync(capturedMedia);
+        await MediaLibrary.saveToLibraryAsync(finalMediaUri);
         
         if (type === 'story') {
           // Create snap first for story
           setUploadProgress('Creating story snap...');
           const snap = await SnapService.createSnapFromMedia(
-            capturedMedia,
+            finalMediaUri,
             capturedMediaType,
             {
               caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
@@ -418,7 +452,7 @@ export default function CameraScreen() {
         } else {
           // Regular snap to friends
           const snap = await SnapService.createSnapFromMedia(
-            capturedMedia,
+            finalMediaUri,
             capturedMediaType,
             {
               caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
@@ -469,6 +503,30 @@ export default function CameraScreen() {
     setFlashMode(current => 
       current === 'off' ? 'on' : 'off'
     );
+  };
+
+  // AR Filter functions
+  const handleAddARElement = (element: ARElement) => {
+    setArElements(prev => [...prev, element]);
+  };
+
+  const handleUpdateARElement = (id: string, updates: Partial<ARElement>) => {
+    setArElements(prev => 
+      prev.map(el => el.id === id ? { ...el, ...updates } : el)
+    );
+  };
+
+  const handleDeleteARElement = (id: string) => {
+    setArElements(prev => prev.filter(el => el.id !== id));
+  };
+
+  const handleApplyFilter = (filter: ARFilter) => {
+    setActiveFilter(filter);
+  };
+
+  const clearAllARElements = () => {
+    setArElements([]);
+    setActiveFilter(null);
   };
 
   // Add friend selection modal
@@ -599,18 +657,36 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.previewContainer}>
-          {capturedMediaType === 'video' ? (
-            <Video
-              source={{ uri: capturedMedia }}
-              style={styles.previewImage}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={true}
-              isLooping={true}
-              useNativeControls={false}
+          {/* Capture Area - Only Image + AR Overlay */}
+          <ViewShot 
+            ref={previewRef}
+            style={styles.captureArea}
+            options={{
+              format: 'jpg',
+              quality: 0.9,
+            }}
+          >
+            {capturedMediaType === 'video' ? (
+              <Video
+                source={{ uri: capturedMedia }}
+                style={styles.previewImage}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={true}
+                useNativeControls={false}
+              />
+            ) : (
+              <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+            )}
+            
+            {/* AR Overlay */}
+            <AROverlay
+              elements={arElements}
+              onUpdateElement={handleUpdateARElement}
+              onDeleteElement={handleDeleteARElement}
+              activeFilter={activeFilter?.data}
             />
-          ) : (
-            <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
-          )}
+          </ViewShot>
           
           <View style={styles.previewOverlay}>
             {/* Header */}
@@ -618,6 +694,19 @@ export default function CameraScreen() {
               <Pressable style={styles.closeButton} onPress={resetCamera}>
                 <Text style={styles.closeIcon}>✕</Text>
               </Pressable>
+              <View style={styles.previewHeaderRight}>
+                <Pressable 
+                  style={[styles.arButton, showARPanel && styles.arButtonActive]} 
+                  onPress={() => setShowARPanel(!showARPanel)}
+                >
+                  <Text style={styles.controlText}>✨</Text>
+                </Pressable>
+                {arElements.length > 0 && (
+                  <Pressable style={styles.clearButton} onPress={clearAllARElements}>
+                    <Text style={styles.controlText}>🗑️</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
 
             {/* Bottom Action Buttons */}
@@ -655,6 +744,14 @@ export default function CameraScreen() {
               </View>
             )}
           </View>
+
+          {/* AR Filter Panel */}
+          <ARFilterPanel
+            visible={showARPanel}
+            onClose={() => setShowARPanel(false)}
+            onAddElement={handleAddARElement}
+            onApplyFilter={handleApplyFilter}
+          />
 
           {/* Friend Selection Modal */}
           {renderFriendSelectionModal()}
@@ -721,6 +818,7 @@ export default function CameraScreen() {
                 <Text style={styles.recordingText}>● MOCK REC</Text>
               </View>
             )}
+
           </View>
         </View>
       </View>
@@ -768,7 +866,7 @@ export default function CameraScreen() {
               </Pressable>
             </View>
             
-            <View style={styles.placeholder} />
+                            <View style={styles.placeholder} />
           </View>
 
           {isRecording && (
@@ -776,6 +874,7 @@ export default function CameraScreen() {
               <Text style={styles.recordingText}>● REC</Text>
             </View>
           )}
+
         </View>
       </CameraView>
     </View>
@@ -872,11 +971,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
+  leftControls: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rightControls: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
   flipButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
     backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arButtonActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.8)',
+  },
+  clearButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -948,6 +1076,10 @@ const styles = StyleSheet.create({
   previewContainer: {
     flex: 1,
   },
+  captureArea: {
+    flex: 1,
+    position: 'relative',
+  },
   previewImage: {
     flex: 1,
     resizeMode: 'cover',
@@ -965,6 +1097,13 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  previewHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   previewControls: {
     flexDirection: 'row',

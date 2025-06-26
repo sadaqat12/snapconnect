@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Import polyfills - temporarily disabled for debugging
 // import './polyfills/cssInteropHack';
@@ -192,9 +193,11 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      {session ? <MainTabsNavigator /> : <AuthStackNavigator />}
-      <StatusBar style="auto" />
-    </NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        {session ? <MainTabsNavigator /> : <AuthStackNavigator />}
+        <StatusBar style="auto" />
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
