@@ -44,14 +44,29 @@ export class SnapService {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('User not authenticated');
 
-      // Generate unique filename
-      const fileExt = uri.split('.').pop() || (mediaType === 'photo' ? 'jpg' : 'mp4');
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      // Get file info
+      // Get file info and validate
       const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        throw new Error('Media file not found');
+      }
+      if (fileInfo.size === 0) {
+        throw new Error('Media file is empty');
+      }
       console.log('File info:', fileInfo);
+
+      // Validate file type
+      const fileExt = uri.split('.').pop()?.toLowerCase() || '';
+      if (mediaType === 'photo' && !['jpg', 'jpeg', 'png'].includes(fileExt)) {
+        throw new Error('Invalid photo format. Use JPG or PNG.');
+      }
+      if (mediaType === 'video' && !['mp4', 'mov'].includes(fileExt)) {
+        throw new Error('Invalid video format. Use MP4 or MOV.');
+      }
+
+      // Generate unique filename with correct extension
+      const finalExt = mediaType === 'photo' ? 'jpg' : 'mp4';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${finalExt}`;
+      const filePath = `${user.id}/${fileName}`;
 
       // Read file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -63,29 +78,50 @@ export class SnapService {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No active session');
 
-      // Upload using Supabase client
-      const { data, error } = await supabase.storage
-        .from('media')
-        .upload(filePath, decode(base64), {
-          contentType: mediaType === 'photo' ? 'image/jpeg' : 'video/mp4',
-          upsert: false,
-        });
+      // Set correct content type
+      const contentType = mediaType === 'photo' 
+        ? 'image/jpeg'
+        : 'video/mp4';
 
-      if (error) {
-        console.error('Upload error:', error);
-        throw error;
+      // Upload using Supabase client with retry logic
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError: any = null;
+
+      while (attempts < maxAttempts) {
+        try {
+          const { data, error } = await supabase.storage
+            .from('media')
+            .upload(filePath, decode(base64), {
+              contentType,
+              upsert: false,
+            });
+
+          if (error) throw error;
+
+          console.log('Upload successful:', data);
+          
+          // Generate public URL
+          const mediaUrl = `${STORAGE_URL}/object/public/media/${filePath}`;
+          console.log('Generated media URL:', mediaUrl);
+
+          return mediaUrl;
+        } catch (error) {
+          lastError = error;
+          attempts++;
+          if (attempts < maxAttempts) {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+          }
+        }
       }
 
-      console.log('Upload successful:', data);
-
-      // Generate public URL
-      const mediaUrl = `${STORAGE_URL}/object/public/media/${filePath}`;
-      console.log('Generated media URL:', mediaUrl);
-
-      return mediaUrl;
+      // If we get here, all attempts failed
+      console.error('Upload failed after', maxAttempts, 'attempts:', lastError);
+      throw new Error(`Failed to upload ${mediaType} after ${maxAttempts} attempts: ${lastError?.message || lastError}`);
     } catch (error) {
       console.error('Upload error:', error);
-      throw new Error(`Failed to upload ${mediaType}: ${error}`);
+      throw error;
     }
   }
 
@@ -194,6 +230,30 @@ export class SnapService {
     } catch (error) {
       console.error('Create snap workflow error:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get a snap by ID
+   */
+  static async getSnapById(snapId: string): Promise<SnapData> {
+    try {
+      const { data, error } = await supabase
+        .from('snaps')
+        .select('*')
+        .eq('id', snapId)
+        .single();
+
+      if (error) throw error;
+      
+      // Convert URL to local storage URL
+      return {
+        ...data as SnapData,
+        media_url: data.media_url.replace(/https:\/\/[^\/]+\/storage\/v1/, STORAGE_URL),
+      };
+    } catch (error) {
+      console.error('Get snap by ID error:', error);
+      throw new Error(`Failed to get snap: ${error}`);
     }
   }
 

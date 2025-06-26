@@ -1,19 +1,170 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert, Image } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { StoryData, StoryService } from '../lib/storyService';
+import StoryViewer from '../components/StoryViewer';
+import { supabase } from '../lib/supabase';
 
 export default function StoriesScreen() {
-  // Mock data - will be replaced with real data later
-  const myStories = [
-    { id: '1', thumbnail: '🏔️', views: 12, timestamp: '2h ago' },
-    { id: '2', thumbnail: '🍜', views: 8, timestamp: '5h ago' },
-  ];
+  const [myStories, setMyStories] = useState<StoryData[]>([]);
+  const [friendStories, setFriendStories] = useState<StoryData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedStories, setSelectedStories] = useState<StoryData[]>([]);
+  const [initialStoryIndex, setInitialStoryIndex] = useState(0);
+  const [isStoryViewerVisible, setIsStoryViewerVisible] = useState(false);
+  
+  const realtimeChannel = useRef<any>(null);
 
-  const friendStories = [
-    { id: '3', name: 'Sarah', avatar: '👩‍🦰', thumbnail: '🌴', timestamp: '1h ago', viewed: false },
-    { id: '4', name: 'Mike', avatar: '👨‍💻', thumbnail: '🍕', timestamp: '3h ago', viewed: true },
-    { id: '5', name: 'Emma', avatar: '👩‍🎨', thumbnail: '🎨', timestamp: '4h ago', viewed: false },
-    { id: '6', name: 'Alex', avatar: '👨‍🚀', thumbnail: '🚀', timestamp: '6h ago', viewed: true },
-  ];
+  useEffect(() => {
+    loadStories();
+    setupRealtimeSubscription();
+    
+    // Cleanup old stories periodically
+    const cleanupInterval = setInterval(async () => {
+      try {
+        await StoryService.cleanupExpiredStories();
+        await loadStories(); // Refresh after cleanup
+      } catch (error) {
+        console.error('Story cleanup error:', error);
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => {
+      clearInterval(cleanupInterval);
+      if (realtimeChannel.current) {
+        supabase.removeChannel(realtimeChannel.current);
+      }
+    };
+  }, []);
+
+  // Refresh stories when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStories();
+    }, [])
+  );
+
+  const setupRealtimeSubscription = () => {
+    realtimeChannel.current = supabase
+      .channel('stories_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'stories',
+        },
+        () => loadStories()
+      )
+      .subscribe();
+  };
+
+  const loadStories = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Load user's own stories and friends' stories in parallel
+      const [userStoriesResult, friendStoriesResult] = await Promise.allSettled([
+        StoryService.getUserStories(),
+        StoryService.getFriendsStories(),
+      ]);
+
+      if (userStoriesResult.status === 'fulfilled') {
+        console.log('Loaded user stories:', userStoriesResult.value.length);
+        setMyStories(userStoriesResult.value);
+      } else {
+        console.error('Error loading user stories:', userStoriesResult.reason);
+      }
+
+      if (friendStoriesResult.status === 'fulfilled') {
+        console.log('Loaded friend stories:', friendStoriesResult.value.length);
+        console.log('Friend stories data:', friendStoriesResult.value.map(s => ({
+          id: s.id,
+          creator: s.creator?.username,
+          snapCount: s.snaps?.length || 0,
+          isViewed: s.is_viewed,
+          viewers: s.viewers
+        })));
+        setFriendStories(friendStoriesResult.value);
+      } else {
+        console.error('Error loading friend stories:', friendStoriesResult.reason);
+      }
+    } catch (error) {
+      console.error('Error loading stories:', error);
+      Alert.alert('Error', 'Failed to load stories. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadStories();
+  };
+
+  const handleMyStoryPress = (story: StoryData, index: number) => {
+    setSelectedStories(myStories);
+    setInitialStoryIndex(index);
+    setIsStoryViewerVisible(true);
+  };
+
+  const handleFriendStoryPress = (story: StoryData, index: number) => {
+    console.log('Friend story pressed:', {
+      storyId: story.id,
+      creator: story.creator?.username,
+      snapCount: story.snaps?.length || 0,
+      snapIds: story.snap_ids,
+      snaps: story.snaps?.map(s => ({ id: s.id, media_url: s.media_url })),
+      index
+    });
+
+    // Check if story has snaps
+    if (!story.snaps || story.snaps.length === 0) {
+      console.log('Story has no snaps - snap_ids:', story.snap_ids);
+      Alert.alert('Story Empty', `This story has no content to view.\nStory ID: ${story.id}\nSnap IDs: ${story.snap_ids?.join(', ') || 'none'}`);
+      return;
+    }
+
+    setSelectedStories(friendStories);
+    setInitialStoryIndex(index);
+    setIsStoryViewerVisible(true);
+  };
+
+  const handleAddStoryPress = () => {
+    // Navigate to camera to create story
+    Alert.alert(
+      'Create Story',
+      'Go to Camera tab to take a photo or video for your story!',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const formatTimeAgo = (dateString?: string) => {
+    if (!dateString) return '';
+    
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHours < 1) {
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      return `${diffMins}m ago`;
+    }
+    
+    return `${diffHours}h ago`;
+  };
+
+  const getStoryThumbnail = (story: StoryData) => {
+    const firstSnap = story.snaps?.[0];
+    if (firstSnap?.media_url) {
+      return firstSnap.media_url;
+    }
+    return null;
+  };
 
   return (
     <View style={styles.container}>
@@ -22,76 +173,141 @@ export default function StoriesScreen() {
         <Text style={styles.subtitle}>Share your 24-hour adventures</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* My Stories Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Stories</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesRow}>
-            {/* Add Story Button */}
-            <Pressable style={styles.addStoryCard}>
-              <View style={styles.addStoryContent}>
-                <Text style={styles.addStoryIcon}>➕</Text>
-                <Text style={styles.addStoryText}>Add Story</Text>
-              </View>
-            </Pressable>
-
-            {/* My Stories */}
-            {myStories.map((story) => (
-              <Pressable key={story.id} style={styles.myStoryCard}>
-                <Text style={styles.storyThumbnail}>{story.thumbnail}</Text>
-                <View style={styles.storyStats}>
-                  <Text style={styles.viewCount}>👀 {story.views}</Text>
-                  <Text style={styles.timestamp}>{story.timestamp}</Text>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Friends Stories Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Friends' Adventures</Text>
-          <View style={styles.friendStoriesGrid}>
-            {friendStories.map((story) => (
-              <Pressable key={story.id} style={styles.friendStoryCard}>
-                <View style={[styles.storyRing, !story.viewed && styles.unviewedRing]}>
-                  <Text style={styles.friendStoryThumbnail}>{story.thumbnail}</Text>
-                </View>
-                <View style={styles.friendStoryInfo}>
-                  <View style={styles.friendHeader}>
-                    <Text style={styles.friendAvatar}>{story.avatar}</Text>
-                    <View style={styles.friendDetails}>
-                      <Text style={styles.friendName}>{story.name}</Text>
-                      <Text style={styles.friendTimestamp}>{story.timestamp}</Text>
-                    </View>
-                  </View>
-                  {!story.viewed && <View style={styles.newIndicator} />}
-                </View>
-              </Pressable>
-            ))}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#6366f1']}
+          />
+        }
+      >
+        {isLoading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#6366f1" />
+            <Text style={styles.loadingText}>Loading stories...</Text>
           </View>
-        </View>
+        ) : (
+          <>
+            {/* My Stories Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>My Stories</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesRow}>
+                {/* Add Story Button */}
+                <Pressable style={styles.addStoryCard} onPress={handleAddStoryPress}>
+                  <View style={styles.addStoryContent}>
+                    <Ionicons name="add" size={32} color="#6366f1" />
+                    <Text style={styles.addStoryText}>Add Story</Text>
+                  </View>
+                </Pressable>
+
+                {/* My Stories */}
+                {myStories.map((story, index) => {
+                  const thumbnailUrl = getStoryThumbnail(story);
+                  return (
+                    <Pressable 
+                      key={story.id} 
+                      style={styles.myStoryCard}
+                      onPress={() => handleMyStoryPress(story, index)}
+                    >
+                      {thumbnailUrl ? (
+                        <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
+                      ) : (
+                        <View style={styles.storyThumbnailPlaceholder}>
+                          <Ionicons name="camera" size={24} color="#9CA3AF" />
+                        </View>
+                      )}
+                      <View style={styles.storyStats}>
+                        <Text style={styles.viewCount}>👀 {story.view_count || 0}</Text>
+                        <Text style={styles.timestamp}>{formatTimeAgo(story.created_at)}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Friends Stories Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Friends' Adventures</Text>
+              {friendStories.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    No friend stories yet. Add some friends who post stories!
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.friendStoriesGrid}>
+                  {friendStories.map((story, index) => {
+                  const thumbnailUrl = getStoryThumbnail(story);
+                  return (
+                    <Pressable 
+                      key={story.id} 
+                      style={styles.friendStoryCard}
+                      onPress={() => handleFriendStoryPress(story, index)}
+                    >
+                      <View style={[styles.storyRing, !story.is_viewed && styles.unviewedRing]}>
+                        {thumbnailUrl ? (
+                          <Image source={{ uri: thumbnailUrl }} style={styles.friendStoryThumbnailImage} />
+                        ) : (
+                          <View style={styles.friendStoryThumbnailPlaceholder}>
+                            <Ionicons name="camera" size={20} color="#9CA3AF" />
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.friendStoryInfo}>
+                        <View style={styles.friendHeader}>
+                          <View style={styles.friendAvatarContainer}>
+                            <Text style={styles.friendAvatar}>
+                              {story.creator?.name?.[0] || story.creator?.username?.[0] || '?'}
+                            </Text>
+                          </View>
+                          <View style={styles.friendDetails}>
+                            <Text style={styles.friendName}>
+                              {story.creator?.name || story.creator?.username || 'Unknown'}
+                            </Text>
+                            <Text style={styles.friendTimestamp}>{formatTimeAgo(story.created_at)}</Text>
+                          </View>
+                        </View>
+                        {!story.is_viewed && <View style={styles.newIndicator} />}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                </View>
+              )}
+            </View>
+          </>
+        )}
 
         {/* Story Insights */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Story Insights</Text>
           <View style={styles.insightsCard}>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>📊</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="bar-chart" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Total Views Today</Text>
                 <Text style={styles.insightValue}>20 views</Text>
               </View>
             </View>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>🔥</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="trending-up" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Most Popular Story</Text>
                 <Text style={styles.insightValue}>Mountain Adventure (12 views)</Text>
               </View>
             </View>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>⏰</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="time" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Stories Expire In</Text>
                 <Text style={styles.insightValue}>6 hours</Text>
@@ -102,16 +318,35 @@ export default function StoriesScreen() {
 
         {/* Quick Actions */}
         <View style={styles.section}>
-          <Pressable style={styles.actionButton}>
-            <Text style={styles.actionIcon}>📱</Text>
+          <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="images" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.actionText}>Create Story from Camera Roll</Text>
           </Pressable>
-          <Pressable style={styles.actionButton}>
-            <Text style={styles.actionIcon}>🎥</Text>
+          <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="videocam" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.actionText}>Record Video Story</Text>
           </Pressable>
         </View>
       </ScrollView>
+      
+      {/* Story Viewer */}
+      <StoryViewer
+        stories={selectedStories}
+        initialStoryIndex={initialStoryIndex}
+        isVisible={isStoryViewerVisible}
+        onClose={() => {
+          setIsStoryViewerVisible(false);
+          // Add a small delay to ensure database update is propagated
+          setTimeout(() => {
+            console.log('Reloading stories after viewing...');
+            loadStories();
+          }, 500);
+        }}
+      />
     </View>
   );
 }
@@ -314,5 +549,78 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    marginTop: 16,
+  },
+  storyThumbnailImage: {
+    flex: 1,
+    width: '100%',
+    borderRadius: 12,
+  },
+  storyThumbnailPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333333',
+  },
+  storyThumbnailEmoji: {
+    fontSize: 32,
+  },
+  friendStoryThumbnailImage: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+  },
+  friendAvatarContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#6366f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  friendStoryThumbnailPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333333',
+  },
+  insightIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  actionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
 }); 

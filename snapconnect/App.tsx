@@ -5,6 +5,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { Session } from '@supabase/supabase-js';
+import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Import polyfills - temporarily disabled for debugging
 // import './polyfills/cssInteropHack';
@@ -17,6 +19,7 @@ import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import CameraScreen from './screens/CameraScreen';
 import FriendsScreen from './screens/FriendsScreen';
+import ChatScreen from './screens/ChatScreen';
 import StoriesScreen from './screens/StoriesScreen';
 import ProfileScreen from './screens/ProfileScreen';
 
@@ -28,6 +31,16 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type ChatStackParamList = {
+  ChatList: undefined;
+  Chat: {
+    conversationId: string;
+    conversationName: string;
+    participants: string[];
+    isGroup: boolean;
+  };
+};
+
 export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
@@ -36,12 +49,13 @@ export type AuthStackParamList = {
 // Navigators
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 
 // Loading screen component
 function LoadingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ fontSize: 48, fontWeight: '700', color: '#ffffff', marginBottom: 24 }}>✈️ SnapConnect</Text>
+      <Text style={{ fontSize: 48, fontWeight: '700', color: '#ffffff', marginBottom: 24 }}>SnapConnect</Text>
       <ActivityIndicator size="large" color="#6366f1" />
       <Text style={{ color: '#9CA3AF', marginTop: 20, fontSize: 18 }}>Loading your adventure...</Text>
     </View>
@@ -58,7 +72,17 @@ function AuthStackNavigator() {
   );
 }
 
-// Main tabs navigator with beautiful icons
+// Friends stack navigator to handle chat navigation
+function FriendsStackNavigator() {
+  return (
+    <ChatStack.Navigator screenOptions={{ headerShown: false }}>
+      <ChatStack.Screen name="ChatList" component={FriendsScreen} />
+      <ChatStack.Screen name="Chat" component={ChatScreen} />
+    </ChatStack.Navigator>
+  );
+}
+
+// Main tabs navigator with professional icons
 function MainTabsNavigator() {
   return (
     <MainTabs.Navigator
@@ -78,24 +102,20 @@ function MainTabsNavigator() {
           fontSize: 12,
           fontWeight: '600',
         },
-        tabBarIcon: ({ focused, color }) => {
-          let iconName = '';
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = 'home';
           
           if (route.name === 'Camera') {
-            iconName = focused ? '📸' : '📷';
+            iconName = focused ? 'camera' : 'camera-outline';
           } else if (route.name === 'Friends') {
-            iconName = focused ? '👥' : '👤';
+            iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Stories') {
-            iconName = focused ? '📚' : '📖';
+            iconName = focused ? 'library' : 'library-outline';
           } else if (route.name === 'Profile') {
-            iconName = focused ? '🧳' : '🎒';
+            iconName = focused ? 'person' : 'person-outline';
           }
           
-          return (
-            <Text style={{ fontSize: 24, marginBottom: 4 }}>
-              {iconName}
-            </Text>
-          );
+          return <Ionicons name={iconName} size={size || 24} color={color} />;
         },
       })}
     >
@@ -106,7 +126,7 @@ function MainTabsNavigator() {
       />
       <MainTabs.Screen 
         name="Friends" 
-        component={FriendsScreen}
+        component={FriendsStackNavigator}
         options={{ tabBarLabel: 'Friends' }}
       />
       <MainTabs.Screen 
@@ -173,9 +193,11 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      {session ? <MainTabsNavigator /> : <AuthStackNavigator />}
-      <StatusBar style="auto" />
-    </NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        {session ? <MainTabsNavigator /> : <AuthStackNavigator />}
+        <StatusBar style="auto" />
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }

@@ -68,10 +68,15 @@
 - [ ] Build UI panel to pick filters/effects
 
 ### 3.4 Stories & Group Chat
-- [ ] "Create Story" flow: select multiple snaps → post to story
-- [ ] "View Story" flow: carousel of snaps with timer
-- [ ] 1:1 & group chat screens (reuse snaps upload + storage)
-- [ ] Real-time sync via Supabase Realtime channels
+- [x] "Create Story" flow: select multiple snaps → post to story
+- [x] "View Story" flow: carousel of snaps with timer
+- [x] 1:1 & group chat screens (reuse snaps upload + storage)
+- [x] Real-time sync via Supabase Realtime channels
+- [x] Database tables for conversations and chat messages
+- [x] Integrated chat functionality into FriendsScreen
+- [x] Chat navigation with stack navigator
+- [x] Ephemeral text messages with 24-hour expiration
+- [x] Automatic cleanup of expired messages and snaps
 
 ## 🤖 4. Phase 2: RAG-Powered Travel Enhancements
 

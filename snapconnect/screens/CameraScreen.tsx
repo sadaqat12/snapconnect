@@ -1,12 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert, Image, Platform, ActivityIndicator, Modal, FlatList, TextInput } from 'react-native';
-import { CameraView, Camera } from 'expo-camera';
+import { CameraView, Camera, VideoQuality, VideoCodec } from 'expo-camera';
+import { Video, ResizeMode } from 'expo-av';
+import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SnapService } from '../lib/snapService';
+import { StoryService } from '../lib/storyService';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system';
 import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
+import ARFilterPanel, { ARFilter, ARElement } from '../components/ARFilterPanel';
+import AROverlay from '../components/AROverlay';
+import ViewShot, { captureRef } from 'react-native-view-shot';
 
 export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -19,9 +26,9 @@ export default function CameraScreen() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [capturedMediaType, setCapturedMediaType] = useState<'photo' | 'video'>('photo');
   const [pressStartTime, setPressStartTime] = useState<number>(0);
+  const [isImagePickerActive, setIsImagePickerActive] = useState(false);
   const shouldStartRecordingRef = useRef<boolean>(false);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const recordingPromiseRef = useRef<Promise<any> | null>(null);
   const cameraRef = useRef<any>(null);
 
   // New state for friend selection
@@ -31,8 +38,21 @@ export default function CameraScreen() {
   const [searchResults, setSearchResults] = useState<Friend[]>([]);
   const { friends, searchUsers, fetchFriends } = useFriendsStore();
 
+  // AR Filters state
+  const [showARPanel, setShowARPanel] = useState(false);
+  const [arElements, setArElements] = useState<ARElement[]>([]);
+  const [activeFilter, setActiveFilter] = useState<ARFilter | null>(null);
+  
+  // Ref for capturing preview with overlays
+  const previewRef = useRef<any>(null);
+
   // Check if running in simulator
   const isSimulator = Constants.isDevice === false;
+
+  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+  const [minRecordingDuration] = useState<number>(500); // Minimum 500ms recording duration
+
+
 
   useEffect(() => {
     if (isSimulator) {
@@ -55,24 +75,35 @@ export default function CameraScreen() {
     setCapturedMedia(mockImageUrl);
     setCapturedMediaType('photo');
     setIsPreview(true);
-    Alert.alert('📸 Simulator Mode', 'Mock photo captured! On a real device, this would be your actual photo.');
+    Alert.alert('Simulator Mode', 'Mock photo captured! On a real device, this would be your actual photo.');
   };
 
   const startRecordingSimulator = () => {
     setIsRecording(true);
-    Alert.alert('🎥 Simulator Mode', 'Mock video recording started! On a real device, this would record actual video.');
+    Alert.alert('Simulator Mode', 'Mock video recording started! On a real device, this would record actual video.');
     
-    // Auto-stop after 3 seconds for demo
-    setTimeout(() => {
-      setIsRecording(false);
-      const mockVideoUrl = `https://picsum.photos/400/800?random=${Date.now()}`;
-      setCapturedMedia(mockVideoUrl);
-      setCapturedMediaType('video');
-      setIsPreview(true);
-    }, 3000);
+    // Don't auto-stop - let the user control when to stop
+    // The timeout-based auto-stop was causing issues with user interaction
+  };
+
+  const stopRecordingSimulator = () => {
+    if (!isRecording) return;
+    
+    setIsRecording(false);
+    const mockVideoUrl = `https://picsum.photos/400/800?random=${Date.now()}`;
+    setCapturedMedia(mockVideoUrl);
+    setCapturedMediaType('video');
+    setIsPreview(true);
+    console.log('📱 Simulator: Mock video preview showing');
   };
 
   const handlePressIn = () => {
+    // Don't handle press if ImagePicker is active
+    if (isImagePickerActive) {
+      console.log('🚫 Ignoring press - ImagePicker is active');
+      return;
+    }
+    
     console.log('🔴 PRESS IN DETECTED');
     setPressStartTime(Date.now());
     shouldStartRecordingRef.current = true;
@@ -80,7 +111,7 @@ export default function CameraScreen() {
     // Start recording after 300ms hold (like Snapchat)
     recordingTimeoutRef.current = setTimeout(() => {
       console.log('⏰ TIMEOUT REACHED - shouldStartRecording:', shouldStartRecordingRef.current);
-      if (shouldStartRecordingRef.current) {
+      if (shouldStartRecordingRef.current && !isImagePickerActive) {
         console.log('🎥 STARTING RECORDING');
         startRecording();
       }
@@ -88,6 +119,12 @@ export default function CameraScreen() {
   };
 
   const handlePressOut = () => {
+    // Don't handle press if ImagePicker is active
+    if (isImagePickerActive) {
+      console.log('🚫 Ignoring press out - ImagePicker is active');
+      return;
+    }
+    
     console.log('🔵 PRESS OUT DETECTED');
     const pressDuration = Date.now() - pressStartTime;
     console.log('⏱️ Press duration:', pressDuration, 'ms, isRecording:', isRecording);
@@ -101,16 +138,18 @@ export default function CameraScreen() {
     
     shouldStartRecordingRef.current = false;
     
-    if (pressDuration < 300 && !isRecording) {
-      // Quick tap - take photo
-      console.log('📸 QUICK TAP - taking photo');
-      takePicture();
-    } else if (isRecording) {
-      // Was recording - stop it
+    if (isRecording) {
+      // If we're currently recording, stop it regardless of duration
       console.log('🛑 STOPPING RECORDING');
       stopRecording();
+    } else if (pressDuration < 300) {
+      // Quick tap and not recording - take photo
+      console.log('📸 QUICK TAP - taking photo');
+      takePicture();
     } else {
-      console.log('❓ No action taken - duration:', pressDuration, 'isRecording:', isRecording);
+      // Long press but recording never started (likely an error)
+      console.log('❓ Long press but recording never started - taking photo as fallback');
+      takePicture();
     }
     
     setPressStartTime(0);
@@ -140,80 +179,46 @@ export default function CameraScreen() {
   };
 
   const startRecording = async () => {
+    console.log('🎬 startRecording called, isSimulator:', isSimulator, 'isRecording:', isRecording);
+    
     if (isSimulator) {
       startRecordingSimulator();
       return;
     }
 
-    if (cameraRef.current && !isRecording) {
-      try {
-        setIsRecording(true);
-        console.log('Starting video recording...');
-        
-        // Start recording with optimized settings
-        recordingPromiseRef.current = cameraRef.current.recordAsync({
-          quality: '720p',
-          maxDuration: 30,
-          mute: false,
-          // Use lower bitrate for faster processing
-          videoBitrate: 2500000, // 2.5 Mbps
-        });
+    // Use ImagePicker for reliable video recording
+    try {
+      setIsImagePickerActive(true); // Prevent press handler interference
+      console.log('🎥 Opening video recorder...');
+      
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        quality: 0.8,
+        videoMaxDuration: 30,
+      });
 
-        console.log('🎬 Recording started successfully');
-        
-      } catch (error) {
-        console.error('Recording start error:', error);
-        Alert.alert('Error', 'Failed to start video recording');
-        setIsRecording(false);
+      if (!result.canceled && result.assets[0]) {
+        const video = result.assets[0];
+        console.log('🎉 Video recorded successfully!', video.uri);
+        setCapturedMedia(video.uri);
+        setCapturedMediaType('video');
+        setIsPreview(true);
+      } else {
+        console.log('❌ Video recording cancelled');
       }
+    } catch (error) {
+      console.error('Video recording error:', error);
+      Alert.alert('Error', 'Failed to record video');
+    } finally {
+      setIsImagePickerActive(false); // Re-enable press handlers
     }
   };
 
   const stopRecording = async () => {
-    if (isSimulator) {
-      return;
-    }
-
-    if (cameraRef.current && isRecording) {
-      console.log('Stopping video recording...');
-      setIsRecording(false);
-      
-      try {
-        // First stop the recording
-        cameraRef.current.stopRecording();
-        console.log('📹 Stop recording command sent');
-        
-        // Then wait for the recording promise to resolve
-        if (recordingPromiseRef.current) {
-          try {
-            console.log('⏳ Waiting for video result...');
-            const video = await recordingPromiseRef.current;
-            
-            if (video?.uri) {
-              console.log('🎉 Video recorded successfully! URI:', video.uri);
-              setCapturedMedia(video.uri);
-              setCapturedMediaType('video');
-              setIsPreview(true);
-              console.log('📱 Video preview showing');
-            } else {
-              console.log('❌ No valid video result');
-              showMockVideoPreview();
-            }
-          } catch (error) {
-            console.error('Error processing video:', error);
-            showMockVideoPreview();
-          }
-          
-          recordingPromiseRef.current = null;
-        } else {
-          console.log('❌ No recording promise found');
-          showMockVideoPreview();
-        }
-      } catch (error) {
-        console.error('Error stopping recording:', error);
-        showMockVideoPreview();
-      }
-    }
+    // This function is no longer needed since ImagePicker handles everything
+    // But we keep it for compatibility with the existing press handlers
+    console.log('🛑 stopRecording called - but using ImagePicker now');
   };
 
   const showMockVideoPreview = () => {
@@ -241,9 +246,10 @@ export default function CameraScreen() {
           capturedMedia,
           capturedMediaType,
           {
-            caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Travel moment captured with SnapConnect!`,
+            caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Travel moment captured with SnapConnect!`,
+            recipients: [],
+            duration: 10,
             includeLocation: true,
-            duration: capturedMediaType === 'photo' ? 10 : 30,
           },
           (stage, progress) => {
             setUploadProgress(stage);
@@ -251,15 +257,12 @@ export default function CameraScreen() {
         );
 
         Alert.alert(
-          '🎉 Snap Created!', 
-          `Your travel ${capturedMediaType} has been saved to the cloud and your gallery!`,
+          'Snap Created!',
+          `Your ${capturedMediaType} has been processed and is ready to share!`,
           [
-            { text: 'Take Another', onPress: resetCamera },
-            { text: 'View Snaps', onPress: () => {
-              resetCamera();
-              // TODO: Navigate to snaps/stories view
-            }},
-            { text: 'Done', onPress: resetCamera }
+            { text: 'Share with Friends', onPress: handleSendToFriends },
+            { text: 'Add to Story', onPress: handleAddToStory },
+            { text: 'Save Only', onPress: handleSaveOnly },
           ]
         );
       } else {
@@ -267,14 +270,7 @@ export default function CameraScreen() {
         setUploadProgress('Simulating upload...');
         await new Promise(resolve => setTimeout(resolve, 2000)); // Fake delay
         
-        Alert.alert(
-          'Snap Saved! 📱', 
-          'Simulator mode - On a real device, this would upload to cloud storage and save to your gallery.',
-          [
-            { text: 'Take Another', onPress: resetCamera },
-            { text: 'Done', onPress: resetCamera }
-          ]
-        );
+        Alert.alert('Saved!', 'Simulator: Photo would be saved to gallery.');
       }
     } catch (error) {
       Alert.alert('Upload Error', `Failed to save snap: ${error}`);
@@ -292,15 +288,14 @@ export default function CameraScreen() {
       recordingTimeoutRef.current = null;
     }
     
-    // Clean up recording promise
-    recordingPromiseRef.current = null;
-    
     setCapturedMedia(null);
     setIsPreview(false);
     setIsUploading(false);
     setUploadProgress('');
     setCapturedMediaType('photo');
     setIsRecording(false);
+    setRecordingStartTime(0); // Reset recording start time
+    // Recording promise removed since we're using file-based approach
     shouldStartRecordingRef.current = false;
     setPressStartTime(0);
   };
@@ -324,10 +319,10 @@ export default function CameraScreen() {
       
       if (!isSimulator) {
         await MediaLibrary.saveToLibraryAsync(capturedMedia);
-        Alert.alert('💾 Saved!', 'Photo saved to your gallery only.');
+        Alert.alert('Saved!', 'Photo saved to your gallery only.');
       } else {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        Alert.alert('💾 Saved!', 'Simulator: Photo would be saved to gallery.');
+        Alert.alert('Saved!', 'Simulator: Photo would be saved to gallery.');
       }
       
       resetCamera();
@@ -400,35 +395,82 @@ export default function CameraScreen() {
 
     try {
       setIsUploading(true);
+      let finalMediaUri = capturedMedia;
+      
+      // If there are AR elements, capture the preview with overlays
+      if (arElements.length > 0) {
+        setUploadProgress('Applying AR effects...');
+        try {
+          // Add a small delay to ensure the view is fully rendered
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          if (previewRef.current) {
+            // Use ViewShot capture method
+            const capturedUri = await previewRef.current.capture();
+            finalMediaUri = capturedUri;
+            console.log('✅ Captured preview with AR elements:', capturedUri);
+          } else {
+            console.log('⚠️ Preview ref not available, using original media');
+          }
+        } catch (captureError) {
+          console.error('❌ Failed to capture AR overlay:', captureError);
+          console.log('📷 Falling back to original media without AR effects');
+          // Continue with original media if capture fails
+        }
+      }
 
       if (!isSimulator) {
         // Save to gallery first
-        await MediaLibrary.saveToLibraryAsync(capturedMedia);
+        await MediaLibrary.saveToLibraryAsync(finalMediaUri);
         
-        // Upload to cloud storage and create snap record
-        const snap = await SnapService.createSnapFromMedia(
-          capturedMedia,
-          capturedMediaType,
-          {
-            caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Shared via SnapConnect`,
-            includeLocation: true,
-            duration: capturedMediaType === 'photo' ? 10 : 30,
-            recipients: recipientIds,
-          },
-          (stage, progress) => {
-            setUploadProgress(stage);
-          }
-        );
+        if (type === 'story') {
+          // Create snap first for story
+          setUploadProgress('Creating story snap...');
+          const snap = await SnapService.createSnapFromMedia(
+            finalMediaUri,
+            capturedMediaType,
+            {
+              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
+              includeLocation: true,
+              duration: capturedMediaType === 'photo' ? 10 : 30,
+              recipients: [], // Stories don't have direct recipients
+            },
+            (stage, progress) => {
+              setUploadProgress(stage);
+            }
+          );
 
-        const message = type === 'story' 
-          ? 'Added to your story! Friends can view it for 24 hours.'
-          : 'Snap sent successfully!';
+          // Add snap to story
+          setUploadProgress('Adding to story...');
+          const story = await StoryService.addSnapToStory(snap.id!);
 
-        Alert.alert(
-          '🎉 Success!', 
-          message,
-          [{ text: 'Done', onPress: resetCamera }]
-        );
+          Alert.alert(
+            'Added to Story!',
+            `Your ${capturedMediaType} has been added to your story and will be visible to friends for 24 hours.`,
+            [{ text: 'Great!', style: 'default' }]
+          );
+        } else {
+          // Regular snap to friends
+          const snap = await SnapService.createSnapFromMedia(
+            finalMediaUri,
+            capturedMediaType,
+            {
+              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
+              includeLocation: true,
+              duration: capturedMediaType === 'photo' ? 10 : 30,
+              recipients: recipientIds,
+            },
+            (stage, progress) => {
+              setUploadProgress(stage);
+            }
+          );
+
+          Alert.alert(
+            'Success!',
+            `Your ${capturedMediaType} has been sent to ${selectedFriends.length} friend${selectedFriends.length > 1 ? 's' : ''}!`,
+            [{ text: 'Awesome!', style: 'default' }]
+          );
+        }
       } else {
         // Simulator mode
         setUploadProgress('Simulating upload...');
@@ -443,6 +485,7 @@ export default function CameraScreen() {
         ]);
       }
     } catch (error) {
+      console.error('Upload error:', error);
       Alert.alert('Upload Error', `Failed to ${type === 'story' ? 'add to story' : 'send snap'}: ${error}`);
     } finally {
       setIsUploading(false);
@@ -460,6 +503,30 @@ export default function CameraScreen() {
     setFlashMode(current => 
       current === 'off' ? 'on' : 'off'
     );
+  };
+
+  // AR Filter functions
+  const handleAddARElement = (element: ARElement) => {
+    setArElements(prev => [...prev, element]);
+  };
+
+  const handleUpdateARElement = (id: string, updates: Partial<ARElement>) => {
+    setArElements(prev => 
+      prev.map(el => el.id === id ? { ...el, ...updates } : el)
+    );
+  };
+
+  const handleDeleteARElement = (id: string) => {
+    setArElements(prev => prev.filter(el => el.id !== id));
+  };
+
+  const handleApplyFilter = (filter: ARFilter) => {
+    setActiveFilter(filter);
+  };
+
+  const clearAllARElements = () => {
+    setArElements([]);
+    setActiveFilter(null);
   };
 
   // Add friend selection modal
@@ -550,8 +617,8 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Text style={styles.logo}>✈️ SnapConnect</Text>
-          <Text style={styles.title}>📷 Camera Access</Text>
+                  <Text style={styles.logo}>SnapConnect</Text>
+        <Text style={styles.title}>Camera Access Required</Text>
           <Text style={styles.subtitle}>
             {isSimulator 
               ? 'Loading simulator camera mode...'
@@ -572,8 +639,8 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Text style={styles.logo}>✈️ SnapConnect</Text>
-          <Text style={styles.title}>📵 Permissions Needed</Text>
+          <Text style={styles.logo}>SnapConnect</Text>
+                      <Text style={styles.title}>Permissions Required</Text>
           <Text style={styles.subtitle}>
             Please enable camera and media permissions in your device settings to start capturing snaps
           </Text>
@@ -590,7 +657,36 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.previewContainer}>
-          <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+          {/* Capture Area - Only Image + AR Overlay */}
+          <ViewShot 
+            ref={previewRef}
+            style={styles.captureArea}
+            options={{
+              format: 'jpg',
+              quality: 0.9,
+            }}
+          >
+            {capturedMediaType === 'video' ? (
+              <Video
+                source={{ uri: capturedMedia }}
+                style={styles.previewImage}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={true}
+                useNativeControls={false}
+              />
+            ) : (
+              <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+            )}
+            
+            {/* AR Overlay */}
+            <AROverlay
+              elements={arElements}
+              onUpdateElement={handleUpdateARElement}
+              onDeleteElement={handleDeleteARElement}
+              activeFilter={activeFilter?.data}
+            />
+          </ViewShot>
           
           <View style={styles.previewOverlay}>
             {/* Header */}
@@ -598,6 +694,19 @@ export default function CameraScreen() {
               <Pressable style={styles.closeButton} onPress={resetCamera}>
                 <Text style={styles.closeIcon}>✕</Text>
               </Pressable>
+              <View style={styles.previewHeaderRight}>
+                <Pressable 
+                  style={[styles.arButton, showARPanel && styles.arButtonActive]} 
+                  onPress={() => setShowARPanel(!showARPanel)}
+                >
+                  <Text style={styles.controlText}>✨</Text>
+                </Pressable>
+                {arElements.length > 0 && (
+                  <Pressable style={styles.clearButton} onPress={clearAllARElements}>
+                    <Text style={styles.controlText}>🗑️</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
 
             {/* Bottom Action Buttons */}
@@ -607,7 +716,7 @@ export default function CameraScreen() {
                 onPress={() => handleSaveOnly()}
                 disabled={isUploading}
               >
-                <Text style={styles.downloadIcon}>⬇️</Text>
+                <Ionicons name="download" size={20} color="#ffffff" />
               </Pressable>
 
               <Pressable 
@@ -636,6 +745,14 @@ export default function CameraScreen() {
             )}
           </View>
 
+          {/* AR Filter Panel */}
+          <ARFilterPanel
+            visible={showARPanel}
+            onClose={() => setShowARPanel(false)}
+            onAddElement={handleAddARElement}
+            onApplyFilter={handleApplyFilter}
+          />
+
           {/* Friend Selection Modal */}
           {renderFriendSelectionModal()}
         </View>
@@ -651,8 +768,8 @@ export default function CameraScreen() {
           <View style={styles.cameraOverlay}>
             {/* Header */}
             <View style={styles.header}>
-              <Text style={styles.logoText}>✈️ SnapConnect</Text>
-              <Text style={styles.simulatorBadge}>📱 Simulator</Text>
+                        <Text style={styles.logoText}>SnapConnect</Text>
+          <Text style={styles.simulatorBadge}>Simulator Mode</Text>
               <View style={styles.headerControls}>
                 <Pressable style={styles.flashButton} onPress={toggleFlash}>
                   <Text style={styles.controlText}>
@@ -664,7 +781,7 @@ export default function CameraScreen() {
 
             {/* Mock Camera Preview */}
             <View style={styles.mockPreview}>
-              <Text style={styles.mockCameraIcon}>📷</Text>
+              <Ionicons name="camera" size={48} color="#9CA3AF" />
               <Text style={styles.mockText}>Mock Camera Preview</Text>
               <Text style={styles.mockSubtext}>
                 Simulator mode - photos will be demo images
@@ -701,6 +818,7 @@ export default function CameraScreen() {
                 <Text style={styles.recordingText}>● MOCK REC</Text>
               </View>
             )}
+
           </View>
         </View>
       </View>
@@ -748,7 +866,7 @@ export default function CameraScreen() {
               </Pressable>
             </View>
             
-            <View style={styles.placeholder} />
+                            <View style={styles.placeholder} />
           </View>
 
           {isRecording && (
@@ -756,6 +874,7 @@ export default function CameraScreen() {
               <Text style={styles.recordingText}>● REC</Text>
             </View>
           )}
+
         </View>
       </CameraView>
     </View>
@@ -852,11 +971,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
+  leftControls: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rightControls: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
   flipButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
     backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arButtonActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.8)',
+  },
+  clearButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -928,6 +1076,10 @@ const styles = StyleSheet.create({
   previewContainer: {
     flex: 1,
   },
+  captureArea: {
+    flex: 1,
+    position: 'relative',
+  },
   previewImage: {
     flex: 1,
     resizeMode: 'cover',
@@ -945,6 +1097,13 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  previewHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   previewControls: {
     flexDirection: 'row',

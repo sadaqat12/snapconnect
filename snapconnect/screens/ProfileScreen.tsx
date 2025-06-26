@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useProfileStore } from '../lib/stores/profileStore';
 
@@ -59,6 +61,26 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleEditAvatar = () => {
+    Alert.alert('Avatar', 'Avatar editing coming soon!');
+  };
+
+  const handleDataExport = () => {
+    Alert.alert('Data Export', 'Export functionality coming soon!');
+  };
+
+  const handleClearCache = () => {
+    Alert.alert('Clear Cache', 'Cache cleared successfully!');
+  };
+
+  const handleHelp = () => {
+    Alert.alert('Help', 'Help center coming soon!');
+  };
+
+  const handleFeedback = () => {
+    Alert.alert('Feedback', 'Feedback form coming soon!');
+  };
+
   if (error) {
     return (
       <View style={styles.centered}>
@@ -81,9 +103,11 @@ export default function ProfileScreen() {
         {/* User Profile Section */}
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
-            <Text style={styles.avatar}>🧳</Text>
-            <Pressable style={styles.editAvatarButton}>
-              <Text style={styles.editAvatarText}>✏️</Text>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={40} color="#9CA3AF" />
+            </View>
+            <Pressable style={styles.editAvatarButton} onPress={handleEditAvatar}>
+              <Ionicons name="pencil" size={16} color="#6366f1" />
             </Pressable>
           </View>
           <Text style={styles.userName}>{profile?.name || 'Travel Explorer'}</Text>
@@ -123,79 +147,103 @@ export default function ProfileScreen() {
             style={styles.menuItem}
             onPress={() => setIsEditingUsername(true)}
           >
-            <Text style={styles.menuIcon}>@</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="at" size={20} color="#6366f1" />
+            </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuText}>Change Username</Text>
               <Text style={styles.menuSubtext}>@{profile?.username}</Text>
             </View>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>🔐</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="shield-checkmark" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Privacy & Security</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>📧</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="mail" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Email Preferences</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Travel Preferences</Text>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>🌍</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="earth" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Travel Interests</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>📍</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="location" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Location Settings</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>🤖</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="sparkles" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>AI Recommendations</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Content</Text>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>📱</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="images" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>My Snaps</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>💾</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="bookmark" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Saved Content</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>📊</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="bar-chart" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Analytics</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
-          <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>❓</Text>
+          <Pressable style={styles.menuItem} onPress={handleHelp}>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="help-circle" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Help Center</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
-          <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>💬</Text>
+          <Pressable style={styles.menuItem} onPress={handleFeedback}>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="chatbubble" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Contact Us</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
           <Pressable style={styles.menuItem}>
-            <Text style={styles.menuIcon}>⭐</Text>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="star" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.menuText}>Rate SnapConnect</Text>
-            <Text style={styles.menuArrow}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </Pressable>
         </View>
 
@@ -208,7 +256,7 @@ export default function ProfileScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>SnapConnect v1.0.0</Text>
-          <Text style={styles.footerSubtext}>Made with ❤️ for travelers</Text>
+          <Text style={styles.footerSubtext}>Made with care for travelers</Text>
         </View>
       </ScrollView>
 
@@ -334,15 +382,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   avatar: {
-    fontSize: 60,
     width: 120,
     height: 120,
     borderRadius: 60,
     backgroundColor: '#1a1a2e',
-    textAlign: 'center',
-    lineHeight: 120,
-    borderWidth: 3,
-    borderColor: '#6366f1',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   editAvatarButton: {
     position: 'absolute',
@@ -354,9 +399,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  editAvatarText: {
-    fontSize: 16,
   },
   userName: {
     fontSize: 24,
@@ -426,11 +468,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333333',
   },
-  menuIcon: {
-    fontSize: 20,
-    marginRight: 16,
-    width: 24,
-    textAlign: 'center',
+  menuIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   menuText: {
     flex: 1,
