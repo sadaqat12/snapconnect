@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { Session } from '@supabase/supabase-js';
+import { Ionicons } from '@expo/vector-icons';
 
 // Import polyfills - temporarily disabled for debugging
 // import './polyfills/cssInteropHack';
@@ -53,7 +54,7 @@ const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 function LoadingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ fontSize: 48, fontWeight: '700', color: '#ffffff', marginBottom: 24 }}>✈️ SnapConnect</Text>
+      <Text style={{ fontSize: 48, fontWeight: '700', color: '#ffffff', marginBottom: 24 }}>SnapConnect</Text>
       <ActivityIndicator size="large" color="#6366f1" />
       <Text style={{ color: '#9CA3AF', marginTop: 20, fontSize: 18 }}>Loading your adventure...</Text>
     </View>
@@ -80,7 +81,7 @@ function FriendsStackNavigator() {
   );
 }
 
-// Main tabs navigator with beautiful icons
+// Main tabs navigator with professional icons
 function MainTabsNavigator() {
   return (
     <MainTabs.Navigator
@@ -100,24 +101,20 @@ function MainTabsNavigator() {
           fontSize: 12,
           fontWeight: '600',
         },
-        tabBarIcon: ({ focused, color }) => {
-          let iconName = '';
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = 'home';
           
           if (route.name === 'Camera') {
-            iconName = focused ? '📸' : '📷';
+            iconName = focused ? 'camera' : 'camera-outline';
           } else if (route.name === 'Friends') {
-            iconName = focused ? '👥' : '👤';
+            iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Stories') {
-            iconName = focused ? '📚' : '📖';
+            iconName = focused ? 'library' : 'library-outline';
           } else if (route.name === 'Profile') {
-            iconName = focused ? '🧳' : '🎒';
+            iconName = focused ? 'person' : 'person-outline';
           }
           
-          return (
-            <Text style={{ fontSize: 24, marginBottom: 4 }}>
-              {iconName}
-            </Text>
-          );
+          return <Ionicons name={iconName} size={size || 24} color={color} />;
         },
       })}
     >

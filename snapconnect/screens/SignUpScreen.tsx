@@ -66,9 +66,8 @@ export default function SignUpScreen({ navigation }: Props) {
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>✈️ SnapConnect</Text>
-          <Text style={styles.title}>Join the Adventure</Text>
-          <Text style={styles.subtitle}>Create your account to start exploring</Text>
+          <Text style={styles.logo}>SnapConnect</Text>
+          <Text style={styles.subtitle}>Create your account</Text>
         </View>
 
         {/* Form */}
@@ -161,13 +160,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     textAlign: 'center',
     marginBottom: 8,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 12,
   },
   subtitle: {
     color: '#9CA3AF',

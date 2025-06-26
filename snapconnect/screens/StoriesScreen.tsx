@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { StoryData, StoryService } from '../lib/storyService';
 import StoryViewer from '../components/StoryViewer';
 import { supabase } from '../lib/supabase';
@@ -135,7 +136,7 @@ export default function StoriesScreen() {
   const handleAddStoryPress = () => {
     // Navigate to camera to create story
     Alert.alert(
-      '📸 Create Story',
+      'Create Story',
       'Go to Camera tab to take a photo or video for your story!',
       [{ text: 'OK' }]
     );
@@ -197,7 +198,7 @@ export default function StoriesScreen() {
                 {/* Add Story Button */}
                 <Pressable style={styles.addStoryCard} onPress={handleAddStoryPress}>
                   <View style={styles.addStoryContent}>
-                    <Text style={styles.addStoryIcon}>➕</Text>
+                    <Ionicons name="add" size={32} color="#6366f1" />
                     <Text style={styles.addStoryText}>Add Story</Text>
                   </View>
                 </Pressable>
@@ -215,7 +216,7 @@ export default function StoriesScreen() {
                         <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
                       ) : (
                         <View style={styles.storyThumbnailPlaceholder}>
-                          <Text style={styles.storyThumbnailEmoji}>📸</Text>
+                          <Ionicons name="camera" size={24} color="#9CA3AF" />
                         </View>
                       )}
                       <View style={styles.storyStats}>
@@ -251,7 +252,9 @@ export default function StoriesScreen() {
                         {thumbnailUrl ? (
                           <Image source={{ uri: thumbnailUrl }} style={styles.friendStoryThumbnailImage} />
                         ) : (
-                          <Text style={styles.friendStoryThumbnail}>📸</Text>
+                          <View style={styles.friendStoryThumbnailPlaceholder}>
+                            <Ionicons name="camera" size={20} color="#9CA3AF" />
+                          </View>
                         )}
                       </View>
                       <View style={styles.friendStoryInfo}>
@@ -284,21 +287,27 @@ export default function StoriesScreen() {
           <Text style={styles.sectionTitle}>Story Insights</Text>
           <View style={styles.insightsCard}>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>📊</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="bar-chart" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Total Views Today</Text>
                 <Text style={styles.insightValue}>20 views</Text>
               </View>
             </View>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>🔥</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="trending-up" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Most Popular Story</Text>
                 <Text style={styles.insightValue}>Mountain Adventure (12 views)</Text>
               </View>
             </View>
             <View style={styles.insightRow}>
-              <Text style={styles.insightIcon}>⏰</Text>
+              <View style={styles.insightIconContainer}>
+                <Ionicons name="time" size={20} color="#6366f1" />
+              </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Stories Expire In</Text>
                 <Text style={styles.insightValue}>6 hours</Text>
@@ -310,11 +319,15 @@ export default function StoriesScreen() {
         {/* Quick Actions */}
         <View style={styles.section}>
           <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
-            <Text style={styles.actionIcon}>📱</Text>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="images" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.actionText}>Create Story from Camera Roll</Text>
           </Pressable>
           <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
-            <Text style={styles.actionIcon}>🎥</Text>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="videocam" size={20} color="#6366f1" />
+            </View>
             <Text style={styles.actionText}>Record Video Story</Text>
           </Pressable>
         </View>
@@ -585,5 +598,29 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: 16,
     textAlign: 'center',
+  },
+  friendStoryThumbnailPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333333',
+  },
+  insightIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  actionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
 }); 

@@ -68,8 +68,8 @@
 - [ ] Build UI panel to pick filters/effects
 
 ### 3.4 Stories & Group Chat
-- [ ] "Create Story" flow: select multiple snaps → post to story
-- [ ] "View Story" flow: carousel of snaps with timer
+- [x] "Create Story" flow: select multiple snaps → post to story
+- [x] "View Story" flow: carousel of snaps with timer
 - [x] 1:1 & group chat screens (reuse snaps upload + storage)
 - [x] Real-time sync via Supabase Realtime channels
 - [x] Database tables for conversations and chat messages

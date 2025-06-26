@@ -4,6 +4,7 @@ import { CameraView, Camera, VideoQuality, VideoCodec } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SnapService } from '../lib/snapService';
 import { StoryService } from '../lib/storyService';
@@ -63,12 +64,12 @@ export default function CameraScreen() {
     setCapturedMedia(mockImageUrl);
     setCapturedMediaType('photo');
     setIsPreview(true);
-    Alert.alert('📸 Simulator Mode', 'Mock photo captured! On a real device, this would be your actual photo.');
+    Alert.alert('Simulator Mode', 'Mock photo captured! On a real device, this would be your actual photo.');
   };
 
   const startRecordingSimulator = () => {
     setIsRecording(true);
-    Alert.alert('🎥 Simulator Mode', 'Mock video recording started! On a real device, this would record actual video.');
+    Alert.alert('Simulator Mode', 'Mock video recording started! On a real device, this would record actual video.');
     
     // Don't auto-stop - let the user control when to stop
     // The timeout-based auto-stop was causing issues with user interaction
@@ -234,9 +235,10 @@ export default function CameraScreen() {
           capturedMedia,
           capturedMediaType,
           {
-            caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Travel moment captured with SnapConnect!`,
+            caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Travel moment captured with SnapConnect!`,
+            recipients: [],
+            duration: 10,
             includeLocation: true,
-            duration: capturedMediaType === 'photo' ? 10 : 30,
           },
           (stage, progress) => {
             setUploadProgress(stage);
@@ -244,15 +246,12 @@ export default function CameraScreen() {
         );
 
         Alert.alert(
-          '🎉 Snap Created!', 
-          `Your travel ${capturedMediaType} has been saved to the cloud and your gallery!`,
+          'Snap Created!',
+          `Your ${capturedMediaType} has been processed and is ready to share!`,
           [
-            { text: 'Take Another', onPress: resetCamera },
-            { text: 'View Snaps', onPress: () => {
-              resetCamera();
-              // TODO: Navigate to snaps/stories view
-            }},
-            { text: 'Done', onPress: resetCamera }
+            { text: 'Share with Friends', onPress: handleSendToFriends },
+            { text: 'Add to Story', onPress: handleAddToStory },
+            { text: 'Save Only', onPress: handleSaveOnly },
           ]
         );
       } else {
@@ -260,14 +259,7 @@ export default function CameraScreen() {
         setUploadProgress('Simulating upload...');
         await new Promise(resolve => setTimeout(resolve, 2000)); // Fake delay
         
-        Alert.alert(
-          'Snap Saved! 📱', 
-          'Simulator mode - On a real device, this would upload to cloud storage and save to your gallery.',
-          [
-            { text: 'Take Another', onPress: resetCamera },
-            { text: 'Done', onPress: resetCamera }
-          ]
-        );
+        Alert.alert('Saved!', 'Simulator: Photo would be saved to gallery.');
       }
     } catch (error) {
       Alert.alert('Upload Error', `Failed to save snap: ${error}`);
@@ -316,10 +308,10 @@ export default function CameraScreen() {
       
       if (!isSimulator) {
         await MediaLibrary.saveToLibraryAsync(capturedMedia);
-        Alert.alert('💾 Saved!', 'Photo saved to your gallery only.');
+        Alert.alert('Saved!', 'Photo saved to your gallery only.');
       } else {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        Alert.alert('💾 Saved!', 'Simulator: Photo would be saved to gallery.');
+        Alert.alert('Saved!', 'Simulator: Photo would be saved to gallery.');
       }
       
       resetCamera();
@@ -404,7 +396,7 @@ export default function CameraScreen() {
             capturedMedia,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Story`,
+              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: [], // Stories don't have direct recipients
@@ -416,12 +408,12 @@ export default function CameraScreen() {
 
           // Add snap to story
           setUploadProgress('Adding to story...');
-          await StoryService.addSnapToStory(snap.id!);
+          const story = await StoryService.addSnapToStory(snap.id!);
 
           Alert.alert(
-            '🎉 Added to Story!', 
-            'Your snap has been added to your story! Friends can view it for 24 hours.',
-            [{ text: 'Done', onPress: resetCamera }]
+            'Added to Story!',
+            `Your ${capturedMediaType} has been added to your story and will be visible to friends for 24 hours.`,
+            [{ text: 'Great!', style: 'default' }]
           );
         } else {
           // Regular snap to friends
@@ -429,7 +421,7 @@ export default function CameraScreen() {
             capturedMedia,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Shared via SnapConnect`,
+              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: recipientIds,
@@ -440,9 +432,9 @@ export default function CameraScreen() {
           );
 
           Alert.alert(
-            '🎉 Success!', 
-            'Snap sent successfully!',
-            [{ text: 'Done', onPress: resetCamera }]
+            'Success!',
+            `Your ${capturedMediaType} has been sent to ${selectedFriends.length} friend${selectedFriends.length > 1 ? 's' : ''}!`,
+            [{ text: 'Awesome!', style: 'default' }]
           );
         }
       } else {
@@ -567,8 +559,8 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Text style={styles.logo}>✈️ SnapConnect</Text>
-          <Text style={styles.title}>📷 Camera Access</Text>
+                  <Text style={styles.logo}>SnapConnect</Text>
+        <Text style={styles.title}>Camera Access Required</Text>
           <Text style={styles.subtitle}>
             {isSimulator 
               ? 'Loading simulator camera mode...'
@@ -589,8 +581,8 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Text style={styles.logo}>✈️ SnapConnect</Text>
-          <Text style={styles.title}>📵 Permissions Needed</Text>
+          <Text style={styles.logo}>SnapConnect</Text>
+                      <Text style={styles.title}>Permissions Required</Text>
           <Text style={styles.subtitle}>
             Please enable camera and media permissions in your device settings to start capturing snaps
           </Text>
@@ -635,7 +627,7 @@ export default function CameraScreen() {
                 onPress={() => handleSaveOnly()}
                 disabled={isUploading}
               >
-                <Text style={styles.downloadIcon}>⬇️</Text>
+                <Ionicons name="download" size={20} color="#ffffff" />
               </Pressable>
 
               <Pressable 
@@ -679,8 +671,8 @@ export default function CameraScreen() {
           <View style={styles.cameraOverlay}>
             {/* Header */}
             <View style={styles.header}>
-              <Text style={styles.logoText}>✈️ SnapConnect</Text>
-              <Text style={styles.simulatorBadge}>📱 Simulator</Text>
+                        <Text style={styles.logoText}>SnapConnect</Text>
+          <Text style={styles.simulatorBadge}>Simulator Mode</Text>
               <View style={styles.headerControls}>
                 <Pressable style={styles.flashButton} onPress={toggleFlash}>
                   <Text style={styles.controlText}>
@@ -692,7 +684,7 @@ export default function CameraScreen() {
 
             {/* Mock Camera Preview */}
             <View style={styles.mockPreview}>
-              <Text style={styles.mockCameraIcon}>📷</Text>
+              <Ionicons name="camera" size={48} color="#9CA3AF" />
               <Text style={styles.mockText}>Mock Camera Preview</Text>
               <Text style={styles.mockSubtext}>
                 Simulator mode - photos will be demo images

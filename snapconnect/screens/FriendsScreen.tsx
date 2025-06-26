@@ -12,6 +12,7 @@ import {
   Pressable,
   Modal,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SnapService, SnapData } from '../lib/snapService';
@@ -507,28 +508,18 @@ export default function FriendsScreen() {
           )}
         </View>
         
-        <View style={styles.activityIndicators}>
+        <View style={styles.activityContainer}>
           {item.unreadSnaps.length > 0 && (
             <View style={styles.activityBadge}>
-              <Text style={styles.activityCount}>{item.unreadSnaps.length}</Text>
-              <Text style={styles.activityIcon}>📸</Text>
+              <Ionicons name="camera" size={12} color="#ffffff" />
+              <Text style={styles.activityText}>{item.unreadSnaps.length}</Text>
             </View>
           )}
-          
           {item.unreadMessages > 0 && (
-            <View style={[styles.activityBadge, styles.messageBadge]}>
-              <Text style={styles.activityCount}>{item.unreadMessages}</Text>
-              <Text style={styles.activityIcon}>💬</Text>
+            <View style={styles.activityBadge}>
+              <Ionicons name="chatbubble" size={12} color="#ffffff" />
+              <Text style={styles.activityText}>{item.unreadMessages}</Text>
             </View>
-          )}
-          
-          {!hasActivity && (
-            <Pressable
-              style={styles.chatButton}
-              onPress={() => startDirectChat(item)}
-            >
-              <Text style={styles.chatButtonIcon}>💬</Text>
-            </Pressable>
           )}
         </View>
       </TouchableOpacity>
@@ -654,18 +645,18 @@ export default function FriendsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Friends & Chats</Text>
         <View style={styles.headerActions}>
-          <Pressable
+          <TouchableOpacity
             style={styles.headerButton}
             onPress={() => setShowGroupChatModal(true)}
           >
-            <Text style={styles.headerButtonIcon}>👥</Text>
-          </Pressable>
+            <Ionicons name="people" size={20} color="#6366f1" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerButton}
             onPress={handleCleanupOldSnaps}
             disabled={isLoading}
           >
-            <Text style={styles.headerButtonIcon}>🧹</Text>
+            <Ionicons name="trash" size={20} color="#6366f1" />
           </TouchableOpacity>
         </View>
       </View>
@@ -794,9 +785,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333333',
   },
-  headerButtonIcon: {
-    fontSize: 18,
-  },
   searchContainer: {
     padding: 16,
     flexDirection: 'row',
@@ -879,8 +867,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
-  activityIndicators: {
-    flexDirection: 'column',
+  activityContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
@@ -894,28 +882,10 @@ const styles = StyleSheet.create({
     minWidth: 50,
     justifyContent: 'center',
   },
-  messageBadge: {
-    backgroundColor: '#10b981',
-  },
-  activityCount: {
+  activityText: {
     color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 12,
-    marginRight: 4,
-  },
-  activityIcon: {
-    fontSize: 14,
-  },
-  chatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#333333',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chatButtonIcon: {
-    fontSize: 16,
   },
   addButton: {
     color: '#6366f1',

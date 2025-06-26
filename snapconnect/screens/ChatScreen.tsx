@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SnapService, SnapData } from '../lib/snapService';
 import SnapViewer from '../components/SnapViewer';
@@ -374,10 +375,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         
         // Show feedback to user
         Alert.alert(
-          isSaved ? '💾 Message Saved' : '🗑️ Message Unsaved',
+          isSaved ? 'Message Saved' : 'Message Unsaved',
           isSaved 
-            ? 'This message will not disappear after viewing'
-            : 'This message will disappear after all participants view it'
+            ? 'This message will be preserved and won\'t expire.' 
+            : 'This message will now expire when everyone has viewed it.',
+          [{ text: 'OK' }]
         );
       }
     } catch (error) {
@@ -597,7 +599,9 @@ export default function ChatScreen({ route, navigation }: Props) {
             {/* Saved indicator */}
             {isSaved && (
               <View style={styles.messageIndicators}>
-                <Text style={styles.savedIndicator}>💾</Text>
+                {item.saved_by?.includes(currentUser.id) && (
+                  <Ionicons name="bookmark" size={14} color="#10B981" style={styles.savedIndicator} />
+                )}
               </View>
             )}
           </View>
@@ -618,7 +622,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             <Text style={styles.snapText}>
               {isSaved ? 'Saved Snap' : 'Tap to view'}
             </Text>
-            {isSaved && <Text style={styles.savedIndicator}>💾</Text>}
+            {isSaved && <Ionicons name="bookmark" size={12} color="#10B981" style={styles.savedIndicator} />}
           </Pressable>
         )}
         
@@ -633,12 +637,16 @@ export default function ChatScreen({ route, navigation }: Props) {
           {/* Show status indicators for own messages */}
           {isOwnMessage && (
             <View style={styles.statusIndicators}>
-              {savedByOthers && savedByOthers.length > 0 && (
-                <Text style={styles.statusIndicator}>💾 {savedByOthers.length}</Text>
-              )}
-              {viewedByOthers && viewedByOthers.length > 0 && (
-                <Text style={styles.statusIndicator}>👁️ {viewedByOthers.length}</Text>
-              )}
+                             {savedByOthers && savedByOthers.length > 0 && (
+                 <Text style={styles.statusIndicator}>
+                   <Ionicons name="bookmark" size={12} color="#10B981" /> {savedByOthers.length}
+                 </Text>
+               )}
+               {viewedByOthers && viewedByOthers.length > 0 && (
+                 <Text style={styles.statusIndicator}>
+                   <Ionicons name="eye" size={12} color="#6366f1" /> {viewedByOthers.length}
+                 </Text>
+               )}
             </View>
           )}
         </View>
@@ -663,8 +671,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         <Text style={styles.headerSubtitle}>
           {isGroup ? `${participants.length} members` : 'Active now'}
         </Text>
-        <Text style={styles.ephemeralHint}>
-          💬 Messages disappear after all open chat • Long press to save 💾
+        <Text style={styles.chatInfo}>
+          Messages disappear after all open chat • Long press to save
         </Text>
       </View>
     </View>
@@ -680,12 +688,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {renderHeader()}
       
       <KeyboardAvoidingView 
         style={styles.chatContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <FlatList
           ref={flatListRef}
@@ -693,6 +702,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           style={styles.messagesList}
+          contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
@@ -714,7 +724,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onPress={sendSnapMessage}
               disabled={isSending}
             >
-              <Text style={styles.snapButtonIcon}>📸</Text>
+              <Ionicons name="camera" size={20} color="#ffffff" />
             </Pressable>
             
             <Pressable
@@ -722,9 +732,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onPress={sendTextMessage}
               disabled={!newMessage.trim() || isSending}
             >
-              <Text style={styles.sendButtonIcon}>
-                {isSending ? '⏳' : '➤'}
-              </Text>
+              <Ionicons name="send" size={16} color="#ffffff" />
             </Pressable>
           </View>
         </View>
@@ -882,7 +890,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: '#1a1a2e',
     borderTopWidth: 1,
     borderTopColor: '#333333',
@@ -915,9 +924,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333333',
   },
-  snapButtonIcon: {
-    fontSize: 20,
-  },
   sendButton: {
     width: 40,
     height: 40,
@@ -928,10 +934,6 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#374151',
-  },
-  sendButtonIcon: {
-    fontSize: 18,
-    color: '#ffffff',
   },
   savedMessageBubble: {
     borderColor: '#10b981',
@@ -977,10 +979,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontStyle: 'italic',
   },
-  ephemeralHint: {
+  chatInfo: {
     fontSize: 11,
     color: '#6B7280',
     marginTop: 2,
     fontStyle: 'italic',
+  },
+  messagesContent: {
+    paddingBottom: 12,
   },
 }); 
