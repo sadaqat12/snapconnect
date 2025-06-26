@@ -46,6 +46,9 @@ interface ChatMessage {
   created_at: string;
   read_by: string[];
   expires_at?: string;
+  saved_by?: string[];
+  viewed_by?: string[];
+  is_expired?: boolean;
 }
 
 export default function ChatScreen({ route, navigation }: Props) {
@@ -66,38 +69,41 @@ export default function ChatScreen({ route, navigation }: Props) {
     initializeChat();
     setupRealtimeSubscription();
     
-    // Set up periodic cleanup of expired messages
-    const cleanupInterval = setInterval(async () => {
-      try {
-        await cleanupExpiredMessages();
-        await loadMessages(); // Refresh messages after cleanup
-      } catch (error) {
-        console.error('Message cleanup error:', error);
-      }
-    }, 2 * 60 * 1000); // Run every 2 minutes
-    
     return () => {
-      clearInterval(cleanupInterval);
       if (realtimeChannel.current) {
         supabase.removeChannel(realtimeChannel.current);
       }
     };
   }, [conversationId]);
 
-  // Mark messages as read when screen comes into focus
+  // Mark messages as read AND viewed when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (currentUser && conversationId) {
         markMessagesAsRead();
+        markAllMessagesAsViewed(); // This is the key change - opening chat = viewing all messages
       }
     }, [currentUser, conversationId])
   );
+
+  // Listen for when user is actually leaving the screen (back button, navigation)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      console.log('🚪 User leaving chat screen, triggering message cleanup...');
+      // Trigger cleanup when actually leaving the screen
+      cleanupExpiredMessages();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const cleanupExpiredMessages = async () => {
     try {
       const { error } = await supabase.rpc('cleanup_expired_messages');
       if (error) throw error;
       console.log('Expired messages cleaned up');
+      // Refresh messages after cleanup to remove any that became expired
+      await loadMessages();
     } catch (error) {
       console.error('Error cleaning up expired messages:', error);
     }
@@ -135,19 +141,47 @@ export default function ChatScreen({ route, navigation }: Props) {
           console.log('New message received:', payload);
           const newMessage = payload.new as ChatMessage;
           
-          // Prevent duplicate messages by checking if message already exists
-          setMessages(prev => {
-            const exists = prev.some(msg => msg.id === newMessage.id);
-            if (exists) {
-              return prev; // Don't add duplicate
-            }
-            return [...prev, newMessage];
-          });
+          // Only add non-expired messages
+          if (!newMessage.is_expired) {
+            // Prevent duplicate messages by checking if message already exists
+            setMessages(prev => {
+              const exists = prev.some(msg => msg.id === newMessage.id);
+              if (exists) {
+                return prev; // Don't add duplicate
+              }
+              return [...prev, newMessage];
+            });
+            
+            // Auto-scroll to bottom
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          console.log('Message updated:', payload);
+          const updatedMessage = payload.new as ChatMessage;
           
-          // Auto-scroll to bottom
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
+          setMessages(prev => {
+            if (updatedMessage.is_expired) {
+              // Remove expired messages
+              return prev.filter(msg => msg.id !== updatedMessage.id);
+            } else {
+              // Update existing message
+              return prev.map(msg => 
+                msg.id === updatedMessage.id ? updatedMessage : msg
+              );
+            }
+          });
         }
       )
       .subscribe();
@@ -162,7 +196,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           sender:sender_id(id, username, name)
         `)
         .eq('conversation_id', conversationId)
-        .gte('expires_at', new Date().toISOString()) // Only load non-expired messages
+        .eq('is_expired', false) // Only load non-expired messages
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -211,18 +245,144 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (!currentUser) return;
     
     try {
-      // Use RPC function to mark messages as read
-      const { error } = await supabase
-        .rpc('mark_messages_as_read', {
-          conversation_id: conversationId,
-          user_id: currentUser.id
-        });
+      // Create a simple function to mark only as "read" not "viewed"
+      const { error } = await supabase.rpc('mark_only_as_read', {
+        conversation_id: conversationId,
+        user_id: currentUser.id
+      });
 
       if (error) {
         console.error('Error marking messages as read:', error);
       }
     } catch (error) {
       console.error('Error in markMessagesAsRead:', error);
+    }
+  };
+
+  const markAllMessagesAsViewed = async () => {
+    if (!currentUser) return;
+    
+    console.log('🔍 Marking ALL messages as viewed in conversation:', {
+      userId: currentUser.id,
+      conversationId
+    });
+    
+    try {
+      const { error } = await supabase
+        .rpc('mark_all_messages_as_viewed', {
+          conversation_id: conversationId,
+          user_id: currentUser.id
+        });
+
+      if (error) {
+        console.error('❌ Error marking all messages as viewed:', error);
+      } else {
+        console.log('✅ Successfully marked all messages as viewed in conversation');
+        
+        // Update local state - mark all non-expired messages as viewed by current user
+        setMessages(prev => 
+          prev.map(msg => {
+            if (!msg.is_expired && !(msg.viewed_by || []).includes(currentUser.id)) {
+              return {
+                ...msg,
+                viewed_by: [...(msg.viewed_by || []), currentUser.id]
+              };
+            }
+            return msg;
+          })
+        );
+        
+        // Note: Cleanup will happen when user leaves the chat, not while viewing
+      }
+    } catch (error) {
+      console.error('❌ Error in markAllMessagesAsViewed:', error);
+    }
+  };
+
+  const markMessageAsViewed = async (messageId: string) => {
+    if (!currentUser) return;
+    
+    console.log('🔍 Marking individual message as viewed:', {
+      messageId,
+      userId: currentUser.id,
+      conversationId
+    });
+    
+    try {
+      const { error } = await supabase
+        .rpc('mark_message_as_viewed', {
+          message_id: messageId,
+          user_id: currentUser.id
+        });
+
+      if (error) {
+        console.error('❌ Error marking message as viewed:', error);
+      } else {
+        console.log('✅ Successfully marked message as viewed:', messageId);
+        
+        // Update local state to reflect the change
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId 
+              ? { 
+                  ...msg, 
+                  viewed_by: [...(msg.viewed_by || []), currentUser.id].filter((id, index, arr) => arr.indexOf(id) === index)
+                }
+              : msg
+          )
+        );
+        
+        // Note: Cleanup will happen when user leaves the chat, not while viewing
+      }
+    } catch (error) {
+      console.error('❌ Error in markMessageAsViewed:', error);
+    }
+  };
+
+  const toggleMessageSaved = async (messageId: string) => {
+    if (!currentUser) return;
+    
+    try {
+      const { data: isSaved, error } = await supabase
+        .rpc('toggle_message_saved', {
+          message_id: messageId,
+          user_id: currentUser.id
+        });
+
+      if (error) {
+        console.error('Error toggling message saved:', error);
+        Alert.alert('Error', 'Failed to save message');
+      } else {
+        // Update local state to reflect the change
+        setMessages(prev => 
+          prev.map(msg => {
+            if (msg.id === messageId) {
+              const currentSavedBy = msg.saved_by || [];
+              const newSavedBy = isSaved 
+                ? [...currentSavedBy, currentUser.id].filter((id, index, arr) => arr.indexOf(id) === index)
+                : currentSavedBy.filter(id => id !== currentUser.id);
+              
+              return {
+                ...msg,
+                saved_by: newSavedBy,
+                is_expired: false, // Saved messages don't expire
+              };
+            }
+            return msg;
+          })
+        );
+        
+        // Show feedback to user
+        Alert.alert(
+          isSaved ? '💾 Message Saved' : '🗑️ Message Unsaved',
+          isSaved 
+            ? 'This message will not disappear after viewing'
+            : 'This message will disappear after all participants view it'
+        );
+      }
+    } catch (error) {
+      console.error('Error in toggleMessageSaved:', error);
+      Alert.alert('Error', 'Failed to save message');
     }
   };
 
@@ -378,18 +538,44 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isOwnMessage = item.sender_id === currentUser?.id;
-    const isExpired = item.expires_at && new Date(item.expires_at) < new Date();
+    const isExpired = item.is_expired;
+    const isSaved = item.saved_by && item.saved_by.includes(currentUser?.id || '');
+    const isViewed = item.viewed_by && item.viewed_by.includes(currentUser?.id || '');
+    const savedByOthers = item.saved_by && item.saved_by.filter(id => id !== currentUser?.id);
+    const viewedByOthers = item.viewed_by && item.viewed_by.filter(id => id !== currentUser?.id);
 
     // Don't render expired messages
     if (isExpired) {
       return null;
     }
 
+    const handleMessagePress = () => {
+      if (item.message_type === 'text') {
+        // Text messages are already viewed when opening chat, tap does nothing special
+        console.log('Text message tapped:', item.id, '(already viewed by opening chat)');
+        // No need to call markMessageAsViewed here since it happens on chat open
+      } else {
+        // Handle snap press - this also marks as viewed through the snap viewer
+        console.log('Snap message tapped:', item.id);
+        handleSnapPress(item);
+      }
+    };
+
+    const handleMessageLongPress = () => {
+      // Toggle saved state on long press
+      toggleMessageSaved(item.id);
+    };
+
     return (
-      <View style={[
-        styles.messageContainer,
-        isOwnMessage ? styles.ownMessage : styles.otherMessage
-      ]}>
+      <Pressable
+        style={[
+          styles.messageContainer,
+          isOwnMessage ? styles.ownMessage : styles.otherMessage
+        ]}
+        onPress={handleMessagePress}
+        onLongPress={handleMessageLongPress}
+        delayLongPress={500}
+      >
         {!isOwnMessage && isGroup && (
           <Text style={styles.senderName}>{item.sender_name}</Text>
         )}
@@ -397,7 +583,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         {item.message_type === 'text' ? (
           <View style={[
             styles.textMessageBubble,
-            isOwnMessage ? styles.ownTextBubble : styles.otherTextBubble
+            isOwnMessage ? styles.ownTextBubble : styles.otherTextBubble,
+            isSaved && styles.savedMessageBubble,
+            !isViewed && !isOwnMessage && styles.unviewedMessageBubble
           ]}>
             <Text style={[
               styles.messageText,
@@ -405,33 +593,63 @@ export default function ChatScreen({ route, navigation }: Props) {
             ]}>
               {item.content}
             </Text>
+            
+            {/* Saved indicator */}
+            {isSaved && (
+              <View style={styles.messageIndicators}>
+                <Text style={styles.savedIndicator}>💾</Text>
+              </View>
+            )}
           </View>
         ) : (
           <Pressable
             style={[
               styles.snapMessageBubble,
               isOwnMessage ? styles.ownSnapBubble : styles.otherSnapBubble,
-              isExpired && styles.expiredSnapBubble
+              isSaved && styles.savedSnapBubble
             ]}
-            onPress={() => !isExpired && handleSnapPress(item)}
-                         disabled={isExpired || false}
+            onPress={handleMessagePress}
+            onLongPress={handleMessageLongPress}
+            delayLongPress={500}
           >
             <Text style={styles.snapIcon}>
-              {isExpired ? '⏰' : item.snap_data?.media_type === 'video' ? '🎥' : '📸'}
+              {item.snap_data?.media_type === 'video' ? '🎥' : '📸'}
             </Text>
             <Text style={styles.snapText}>
-              {isExpired ? 'Expired' : 'Tap to view'}
+              {isSaved ? 'Saved Snap' : 'Tap to view'}
             </Text>
+            {isSaved && <Text style={styles.savedIndicator}>💾</Text>}
           </Pressable>
         )}
         
-        <Text style={styles.timestamp}>
-          {new Date(item.created_at).toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })}
-        </Text>
-      </View>
+        <View style={styles.messageFooter}>
+          <Text style={styles.timestamp}>
+            {new Date(item.created_at).toLocaleTimeString([], { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </Text>
+          
+          {/* Show status indicators for own messages */}
+          {isOwnMessage && (
+            <View style={styles.statusIndicators}>
+              {savedByOthers && savedByOthers.length > 0 && (
+                <Text style={styles.statusIndicator}>💾 {savedByOthers.length}</Text>
+              )}
+              {viewedByOthers && viewedByOthers.length > 0 && (
+                <Text style={styles.statusIndicator}>👁️ {viewedByOthers.length}</Text>
+              )}
+            </View>
+          )}
+        </View>
+        
+        {/* Long press hint for new users - now shows for all messages since viewing happens on chat open */}
+        {!isOwnMessage && (
+          <Text style={styles.hintText}>
+            Long press to save
+          </Text>
+        )}
+      </Pressable>
     );
   };
 
@@ -444,6 +662,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         <Text style={styles.headerTitle}>{conversationName}</Text>
         <Text style={styles.headerSubtitle}>
           {isGroup ? `${participants.length} members` : 'Active now'}
+        </Text>
+        <Text style={styles.ephemeralHint}>
+          💬 Messages disappear after all open chat • Long press to save 💾
         </Text>
       </View>
     </View>
@@ -711,5 +932,55 @@ const styles = StyleSheet.create({
   sendButtonIcon: {
     fontSize: 18,
     color: '#ffffff',
+  },
+  savedMessageBubble: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+  },
+  unviewedMessageBubble: {
+    opacity: 0.7,
+    borderColor: '#fbbf24',
+    borderWidth: 1,
+  },
+  messageIndicators: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  savedIndicator: {
+    fontSize: 12,
+    color: '#10b981',
+  },
+  savedSnapBubble: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+  },
+  messageFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  statusIndicators: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusIndicator: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  hintText: {
+    fontSize: 10,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  ephemeralHint: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
 }); 
