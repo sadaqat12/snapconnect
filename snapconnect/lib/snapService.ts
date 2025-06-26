@@ -234,6 +234,30 @@ export class SnapService {
   }
 
   /**
+   * Get a snap by ID
+   */
+  static async getSnapById(snapId: string): Promise<SnapData> {
+    try {
+      const { data, error } = await supabase
+        .from('snaps')
+        .select('*')
+        .eq('id', snapId)
+        .single();
+
+      if (error) throw error;
+      
+      // Convert URL to local storage URL
+      return {
+        ...data as SnapData,
+        media_url: data.media_url.replace(/https:\/\/[^\/]+\/storage\/v1/, STORAGE_URL),
+      };
+    } catch (error) {
+      console.error('Get snap by ID error:', error);
+      throw new Error(`Failed to get snap: ${error}`);
+    }
+  }
+
+  /**
    * Get user's snaps
    */
   static async getUserSnaps(userId?: string): Promise<SnapData[]> {

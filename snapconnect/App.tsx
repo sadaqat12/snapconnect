@@ -17,6 +17,7 @@ import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import CameraScreen from './screens/CameraScreen';
 import FriendsScreen from './screens/FriendsScreen';
+import ChatScreen from './screens/ChatScreen';
 import StoriesScreen from './screens/StoriesScreen';
 import ProfileScreen from './screens/ProfileScreen';
 
@@ -28,6 +29,16 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type ChatStackParamList = {
+  ChatList: undefined;
+  Chat: {
+    conversationId: string;
+    conversationName: string;
+    participants: string[];
+    isGroup: boolean;
+  };
+};
+
 export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
@@ -36,6 +47,7 @@ export type AuthStackParamList = {
 // Navigators
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 
 // Loading screen component
 function LoadingScreen() {
@@ -55,6 +67,16 @@ function AuthStackNavigator() {
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
       <AuthStack.Screen name="SignUp" component={SignUpScreen} />
     </AuthStack.Navigator>
+  );
+}
+
+// Friends stack navigator to handle chat navigation
+function FriendsStackNavigator() {
+  return (
+    <ChatStack.Navigator screenOptions={{ headerShown: false }}>
+      <ChatStack.Screen name="ChatList" component={FriendsScreen} />
+      <ChatStack.Screen name="Chat" component={ChatScreen} />
+    </ChatStack.Navigator>
   );
 }
 
@@ -106,7 +128,7 @@ function MainTabsNavigator() {
       />
       <MainTabs.Screen 
         name="Friends" 
-        component={FriendsScreen}
+        component={FriendsStackNavigator}
         options={{ tabBarLabel: 'Friends' }}
       />
       <MainTabs.Screen 

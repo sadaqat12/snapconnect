@@ -1,0 +1,25 @@
+SnapConnect/
+├── snapconnect/                    # Main Expo app
+│   ├── App.tsx                     # Root navigation & auth flow
+│   ├── screens/                    # All app screens (7 screens)
+│   │   ├── SignInScreen.tsx        # Authentication
+│   │   ├── SignUpScreen.tsx        # User registration  
+│   │   ├── CameraScreen.tsx        # Photo/video capture
+│   │   ├── FriendsScreen.tsx       # Friend management
+│   │   ├── StoriesScreen.tsx       # 24h story viewing
+│   │   ├── ProfileScreen.tsx       # User profile
+│   │   └── HomeScreen.tsx          # Main feed
+│   ├── lib/                        # Core services
+│   │   ├── supabase.ts            # Supabase client config
+│   │   ├── snapService.ts         # Media upload/snap creation
+│   │   └── stores/
+│   │       ├── friendsStore.ts    # Friends state management
+│   │       └── profileStore.ts    # User profile state
+│   └── components/
+│       └── SnapViewer.tsx         # Snap viewing component
+├── supabase/                      # Database & backend
+│   ├── schema.sql                 # Complete database schema
+│   └── migrations/                # Database evolution
+└── docs/
+    ├── prd.txt                    # Product requirements
+    └── todolist.md               # Development checklist
