@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { supabase } from '../lib/supabase';
 import { SnapService } from '../lib/snapService';
+import { StoryService } from '../lib/storyService';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system';
 import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
@@ -396,30 +397,54 @@ export default function CameraScreen() {
         // Save to gallery first
         await MediaLibrary.saveToLibraryAsync(capturedMedia);
         
-        // Upload to cloud storage and create snap record
-        const snap = await SnapService.createSnapFromMedia(
-          capturedMedia,
-          capturedMediaType,
-          {
-            caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Shared via SnapConnect`,
-            includeLocation: true,
-            duration: capturedMediaType === 'photo' ? 10 : 30,
-            recipients: recipientIds,
-          },
-          (stage, progress) => {
-            setUploadProgress(stage);
-          }
-        );
+        if (type === 'story') {
+          // Create snap first for story
+          setUploadProgress('Creating story snap...');
+          const snap = await SnapService.createSnapFromMedia(
+            capturedMedia,
+            capturedMediaType,
+            {
+              caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Story`,
+              includeLocation: true,
+              duration: capturedMediaType === 'photo' ? 10 : 30,
+              recipients: [], // Stories don't have direct recipients
+            },
+            (stage, progress) => {
+              setUploadProgress(stage);
+            }
+          );
 
-        const message = type === 'story' 
-          ? 'Added to your story! Friends can view it for 24 hours.'
-          : 'Snap sent successfully!';
+          // Add snap to story
+          setUploadProgress('Adding to story...');
+          await StoryService.addSnapToStory(snap.id!);
 
-        Alert.alert(
-          '🎉 Success!', 
-          message,
-          [{ text: 'Done', onPress: resetCamera }]
-        );
+          Alert.alert(
+            '🎉 Added to Story!', 
+            'Your snap has been added to your story! Friends can view it for 24 hours.',
+            [{ text: 'Done', onPress: resetCamera }]
+          );
+        } else {
+          // Regular snap to friends
+          const snap = await SnapService.createSnapFromMedia(
+            capturedMedia,
+            capturedMediaType,
+            {
+              caption: `${capturedMediaType === 'photo' ? '📸' : '🎥'} Shared via SnapConnect`,
+              includeLocation: true,
+              duration: capturedMediaType === 'photo' ? 10 : 30,
+              recipients: recipientIds,
+            },
+            (stage, progress) => {
+              setUploadProgress(stage);
+            }
+          );
+
+          Alert.alert(
+            '🎉 Success!', 
+            'Snap sent successfully!',
+            [{ text: 'Done', onPress: resetCamera }]
+          );
+        }
       } else {
         // Simulator mode
         setUploadProgress('Simulating upload...');
@@ -434,6 +459,7 @@ export default function CameraScreen() {
         ]);
       }
     } catch (error) {
+      console.error('Upload error:', error);
       Alert.alert('Upload Error', `Failed to ${type === 'story' ? 'add to story' : 'send snap'}: ${error}`);
     } finally {
       setIsUploading(false);
