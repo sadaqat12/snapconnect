@@ -15,6 +15,14 @@ export default function StoriesScreen() {
   const [initialStoryIndex, setInitialStoryIndex] = useState(0);
   const [isStoryViewerVisible, setIsStoryViewerVisible] = useState(false);
   
+  // Analytics state
+  const [storyInsights, setStoryInsights] = useState({
+    totalViewsToday: 0,
+    mostPopularStory: { name: 'No stories', views: 0 },
+    nextExpiryHours: 0,
+    isLoading: true
+  });
+  
   const realtimeChannel = useRef<any>(null);
 
   useEffect(() => {
@@ -74,6 +82,8 @@ export default function StoriesScreen() {
       if (userStoriesResult.status === 'fulfilled') {
         console.log('Loaded user stories:', userStoriesResult.value.length);
         setMyStories(userStoriesResult.value);
+        // Calculate insights after loading stories
+        calculateStoryInsights(userStoriesResult.value);
       } else {
         console.error('Error loading user stories:', userStoriesResult.reason);
       }
@@ -97,6 +107,60 @@ export default function StoriesScreen() {
     } finally {
       setIsLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const calculateStoryInsights = (stories: StoryData[]) => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      let totalViewsToday = 0;
+      let mostPopularStory = { name: 'No stories', views: 0 };
+      let nextExpiryHours = 24;
+
+      stories.forEach(story => {
+        // Count views for stories created today
+        if (story.created_at) {
+          const storyDate = new Date(story.created_at);
+          if (storyDate >= todayStart) {
+            const viewCount = story.viewers?.length || 0;
+            totalViewsToday += viewCount;
+            
+            // Track most popular story
+            if (viewCount > mostPopularStory.views) {
+              mostPopularStory = {
+                name: story.id ? `Story ${story.id.substring(0, 8)}` : 'Popular Story',
+                views: viewCount
+              };
+            }
+          }
+
+          // Calculate time until next expiry
+          const expiryTime = new Date(story.created_at);
+          expiryTime.setHours(expiryTime.getHours() + 24);
+          const hoursUntilExpiry = Math.max(0, Math.ceil((expiryTime.getTime() - now.getTime()) / (1000 * 60 * 60)));
+          
+          if (hoursUntilExpiry < nextExpiryHours && hoursUntilExpiry > 0) {
+            nextExpiryHours = hoursUntilExpiry;
+          }
+        }
+      });
+
+      // If no stories expire soon, show 24 hours
+      if (stories.length === 0) {
+        nextExpiryHours = 0;
+      }
+
+      setStoryInsights({
+        totalViewsToday,
+        mostPopularStory,
+        nextExpiryHours,
+        isLoading: false
+      });
+    } catch (error) {
+      console.error('Error calculating story insights:', error);
+      setStoryInsights(prev => ({ ...prev, isLoading: false }));
     }
   };
 
@@ -133,14 +197,7 @@ export default function StoriesScreen() {
     setIsStoryViewerVisible(true);
   };
 
-  const handleAddStoryPress = () => {
-    // Navigate to camera to create story
-    Alert.alert(
-      'Create Story',
-      'Go to Camera tab to take a photo or video for your story!',
-      [{ text: 'OK' }]
-    );
-  };
+
 
   const formatTimeAgo = (dateString?: string) => {
     if (!dateString) return '';
@@ -194,39 +251,39 @@ export default function StoriesScreen() {
             {/* My Stories Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>My Stories</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesRow}>
-                {/* Add Story Button */}
-                <Pressable style={styles.addStoryCard} onPress={handleAddStoryPress}>
-                  <View style={styles.addStoryContent}>
-                    <Ionicons name="add" size={32} color="#6366f1" />
-                    <Text style={styles.addStoryText}>Add Story</Text>
-                  </View>
-                </Pressable>
-
-                {/* My Stories */}
-                {myStories.map((story, index) => {
-                  const thumbnailUrl = getStoryThumbnail(story);
-                  return (
-                    <Pressable 
-                      key={story.id} 
-                      style={styles.myStoryCard}
-                      onPress={() => handleMyStoryPress(story, index)}
-                    >
-                      {thumbnailUrl ? (
-                        <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
-                      ) : (
-                        <View style={styles.storyThumbnailPlaceholder}>
-                          <Ionicons name="camera" size={24} color="#9CA3AF" />
+              {myStories.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    No stories yet. Go to Camera tab to create your first story!
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesRow}>
+                  {/* My Stories */}
+                  {myStories.map((story, index) => {
+                    const thumbnailUrl = getStoryThumbnail(story);
+                    return (
+                      <Pressable 
+                        key={story.id} 
+                        style={styles.myStoryCard}
+                        onPress={() => handleMyStoryPress(story, index)}
+                      >
+                        {thumbnailUrl ? (
+                          <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
+                        ) : (
+                          <View style={styles.storyThumbnailPlaceholder}>
+                            <Ionicons name="camera" size={24} color="#9CA3AF" />
+                          </View>
+                        )}
+                        <View style={styles.storyStats}>
+                          <Text style={styles.viewCount}>👀 {story.view_count || 0}</Text>
+                          <Text style={styles.timestamp}>{formatTimeAgo(story.created_at)}</Text>
                         </View>
-                      )}
-                      <View style={styles.storyStats}>
-                        <Text style={styles.viewCount}>👀 {story.view_count || 0}</Text>
-                        <Text style={styles.timestamp}>{formatTimeAgo(story.created_at)}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              )}
             </View>
 
             {/* Friends Stories Section */}
@@ -292,7 +349,9 @@ export default function StoriesScreen() {
               </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Total Views Today</Text>
-                <Text style={styles.insightValue}>20 views</Text>
+                <Text style={styles.insightValue}>
+                  {storyInsights.isLoading ? '...' : `${storyInsights.totalViewsToday} views`}
+                </Text>
               </View>
             </View>
             <View style={styles.insightRow}>
@@ -301,7 +360,12 @@ export default function StoriesScreen() {
               </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Most Popular Story</Text>
-                <Text style={styles.insightValue}>Mountain Adventure (12 views)</Text>
+                <Text style={styles.insightValue}>
+                  {storyInsights.isLoading 
+                    ? '...' 
+                    : `${storyInsights.mostPopularStory.name} (${storyInsights.mostPopularStory.views} views)`
+                  }
+                </Text>
               </View>
             </View>
             <View style={styles.insightRow}>
@@ -310,27 +374,20 @@ export default function StoriesScreen() {
               </View>
               <View style={styles.insightContent}>
                 <Text style={styles.insightTitle}>Stories Expire In</Text>
-                <Text style={styles.insightValue}>6 hours</Text>
+                <Text style={styles.insightValue}>
+                  {storyInsights.isLoading 
+                    ? '...' 
+                    : storyInsights.nextExpiryHours === 0 
+                      ? 'No active stories' 
+                      : `${storyInsights.nextExpiryHours} hours`
+                  }
+                </Text>
               </View>
             </View>
           </View>
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
-            <View style={styles.actionIconContainer}>
-              <Ionicons name="images" size={20} color="#6366f1" />
-            </View>
-            <Text style={styles.actionText}>Create Story from Camera Roll</Text>
-          </Pressable>
-          <Pressable style={styles.actionButton} onPress={handleAddStoryPress}>
-            <View style={styles.actionIconContainer}>
-              <Ionicons name="videocam" size={20} color="#6366f1" />
-            </View>
-            <Text style={styles.actionText}>Record Video Story</Text>
-          </Pressable>
-        </View>
+
       </ScrollView>
       
       {/* Story Viewer */}
@@ -387,30 +444,7 @@ const styles = StyleSheet.create({
   storiesRow: {
     flexDirection: 'row',
   },
-  addStoryCard: {
-    width: 100,
-    height: 120,
-    borderRadius: 12,
-    backgroundColor: '#1a1a2e',
-    borderWidth: 2,
-    borderColor: '#6366f1',
-    borderStyle: 'dashed',
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addStoryContent: {
-    alignItems: 'center',
-  },
-  addStoryIcon: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  addStoryText: {
-    color: '#6366f1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+
   myStoryCard: {
     width: 100,
     height: 120,
@@ -531,25 +565,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#6366f1',
-  },
-  actionIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  actionText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -614,13 +630,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  actionIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
+
 }); 

@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SnapService, SnapData } from '../lib/snapService';
 import SnapViewer from '../components/SnapViewer';
+import UserAvatar from '../components/UserAvatar';
 import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
 
 // Navigation types
@@ -40,6 +41,7 @@ interface ChatMessage {
   conversation_id: string;
   sender_id: string;
   sender_name: string;
+  sender_avatar_url?: string;
   message_type: 'text' | 'snap';
   content?: string;
   snap_id?: string;
@@ -194,7 +196,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         .from('chat_messages')
         .select(`
           *,
-          sender:sender_id(id, username, name)
+          sender:sender_id(id, username, name, avatar_url)
         `)
         .eq('conversation_id', conversationId)
         .eq('is_expired', false) // Only load non-expired messages
@@ -211,6 +213,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               return {
                 ...msg,
                 sender_name: msg.sender.name || msg.sender.username,
+                sender_avatar_url: msg.sender.avatar_url,
                 snap_data: snapData,
               };
             } catch (error) {
@@ -218,12 +221,14 @@ export default function ChatScreen({ route, navigation }: Props) {
               return {
                 ...msg,
                 sender_name: msg.sender.name || msg.sender.username,
+                sender_avatar_url: msg.sender.avatar_url,
               };
             }
           }
           return {
             ...msg,
             sender_name: msg.sender.name || msg.sender.username,
+            sender_avatar_url: msg.sender.avatar_url,
           };
         })
       );
@@ -579,7 +584,14 @@ export default function ChatScreen({ route, navigation }: Props) {
         delayLongPress={500}
       >
         {!isOwnMessage && isGroup && (
-          <Text style={styles.senderName}>{item.sender_name}</Text>
+          <View style={styles.senderInfo}>
+            <UserAvatar 
+              avatarUrl={item.sender_avatar_url} 
+              size="small" 
+              style={styles.messageAvatar} 
+            />
+            <Text style={styles.senderName}>{item.sender_name}</Text>
+          </View>
         )}
         
         {item.message_type === 'text' ? (
@@ -822,11 +834,18 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
   },
+  senderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+  messageAvatar: {
+    marginRight: 8,
+  },
   senderName: {
     fontSize: 12,
     color: '#6366f1',
-    marginBottom: 4,
-    marginLeft: 12,
   },
   textMessageBubble: {
     paddingHorizontal: 16,

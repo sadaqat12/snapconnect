@@ -12,18 +12,31 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useProfileStore } from '../lib/stores/profileStore';
+import UserAvatar from '../components/UserAvatar';
 
 export default function ProfileScreen() {
-  const { profile, isLoading, error, fetchProfile, updateUsername, updateProfile } = useProfileStore();
+  const { profile, isLoading, error, fetchProfile, updateUsername, updateProfile, updateAvatar } = useProfileStore();
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [name, setName] = useState('');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  
+  // Analytics state
+  const [analytics, setAnalytics] = useState({
+    totalSnaps: 0,
+    totalStories: 0,
+    totalFriends: 0,
+    totalCountries: 0,
+    isLoading: true
+  });
 
   useEffect(() => {
     fetchProfile();
+    loadAnalytics();
   }, []);
 
   useEffect(() => {
@@ -31,6 +44,71 @@ export default function ProfileScreen() {
       setName(profile.name || '');
     }
   }, [profile]);
+
+  const loadAnalytics = async () => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('User not authenticated');
+        return;
+      }
+
+      // Fetch analytics data in parallel
+      const [snapsResult, storiesResult, friendsResult] = await Promise.allSettled([
+        // Total snaps sent by user
+        supabase
+          .from('snaps')
+          .select('id', { count: 'exact' })
+          .eq('creator_id', user.id),
+        
+        // Total stories created by user
+        supabase
+          .from('stories')
+          .select('id', { count: 'exact' })
+          .eq('creator_id', user.id),
+        
+        // Total friends (accepted friendships)
+        supabase
+          .from('friendships')
+          .select('id', { count: 'exact' })
+          .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+          .eq('status', 'accepted')
+      ]);
+
+      // Count unique countries from snaps with location data
+      const { data: locationSnaps } = await supabase
+        .from('snaps')
+        .select('location')
+        .eq('creator_id', user.id)
+        .not('location', 'is', null);
+
+      // Extract unique countries (this is a simplified approach)
+      const countries = new Set();
+      locationSnaps?.forEach(snap => {
+        if (snap.location) {
+          try {
+            const location = typeof snap.location === 'string' ? JSON.parse(snap.location) : snap.location;
+            if (location.country) {
+              countries.add(location.country);
+            }
+          } catch (e) {
+            // Skip invalid location data
+          }
+        }
+      });
+
+      setAnalytics({
+        totalSnaps: snapsResult.status === 'fulfilled' ? (snapsResult.value.count || 0) : 0,
+        totalStories: storiesResult.status === 'fulfilled' ? (storiesResult.value.count || 0) : 0,
+        totalFriends: friendsResult.status === 'fulfilled' ? (friendsResult.value.count || 0) : 0,
+        totalCountries: countries.size,
+        isLoading: false
+      });
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+      setAnalytics(prev => ({ ...prev, isLoading: false }));
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -62,7 +140,65 @@ export default function ProfileScreen() {
   };
 
   const handleEditAvatar = () => {
-    Alert.alert('Avatar', 'Avatar editing coming soon!');
+    Alert.alert(
+      'Change Avatar',
+      'Choose an option',
+      [
+        { text: 'Camera', onPress: openCamera },
+        { text: 'Photo Library', onPress: openImagePicker },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const openCamera = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadAvatar(result.assets[0].uri);
+    }
+  };
+
+  const openImagePicker = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Required', 'Photo library permission is needed to select photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadAvatar(result.assets[0].uri);
+    }
+  };
+
+  const uploadAvatar = async (uri: string) => {
+    setIsUploadingAvatar(true);
+    try {
+      await updateAvatar(uri);
+      Alert.alert('Success', 'Avatar updated successfully!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
   };
 
   const handleDataExport = () => {
@@ -103,11 +239,21 @@ export default function ProfileScreen() {
         {/* User Profile Section */}
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={40} color="#9CA3AF" />
-            </View>
-            <Pressable style={styles.editAvatarButton} onPress={handleEditAvatar}>
-              <Ionicons name="pencil" size={16} color="#6366f1" />
+            <UserAvatar 
+              avatarUrl={profile?.avatar_url} 
+              size="xlarge"
+              showBorder={true}
+            />
+            <Pressable 
+              style={[styles.editAvatarButton, isUploadingAvatar && styles.disabledButton]} 
+              onPress={handleEditAvatar}
+              disabled={isUploadingAvatar}
+            >
+              {isUploadingAvatar ? (
+                <ActivityIndicator size="small" color="#6366f1" />
+              ) : (
+                <Ionicons name="pencil" size={16} color="#6366f1" />
+              )}
             </Pressable>
           </View>
           <Text style={styles.userName}>{profile?.name || 'Travel Explorer'}</Text>
@@ -123,19 +269,27 @@ export default function ProfileScreen() {
         {/* Stats Section */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>23</Text>
+            <Text style={styles.statNumber}>
+              {analytics.isLoading ? '...' : analytics.totalSnaps}
+            </Text>
             <Text style={styles.statLabel}>Snaps</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>12</Text>
+            <Text style={styles.statNumber}>
+              {analytics.isLoading ? '...' : analytics.totalStories}
+            </Text>
             <Text style={styles.statLabel}>Stories</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>8</Text>
+            <Text style={styles.statNumber}>
+              {analytics.isLoading ? '...' : analytics.totalFriends}
+            </Text>
             <Text style={styles.statLabel}>Friends</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>5</Text>
+            <Text style={styles.statNumber}>
+              {analytics.isLoading ? '...' : analytics.totalCountries}
+            </Text>
             <Text style={styles.statLabel}>Countries</Text>
           </View>
         </View>
@@ -622,5 +776,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 }); 

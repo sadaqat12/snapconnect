@@ -14,6 +14,7 @@ import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
 import ARFilterPanel, { ARFilter, ARElement } from '../components/ARFilterPanel';
 import AROverlay from '../components/AROverlay';
 import ViewShot, { captureRef } from 'react-native-view-shot';
+import CaptionHelper from '../components/CaptionHelper';
 
 export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -42,6 +43,11 @@ export default function CameraScreen() {
   const [showARPanel, setShowARPanel] = useState(false);
   const [arElements, setArElements] = useState<ARElement[]>([]);
   const [activeFilter, setActiveFilter] = useState<ARFilter | null>(null);
+  
+  // Caption Helper state
+  const [showCaptionHelper, setShowCaptionHelper] = useState(false);
+  const [captionText, setCaptionText] = useState('');
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
   
   // Ref for capturing preview with overlays
   const previewRef = useRef<any>(null);
@@ -298,6 +304,10 @@ export default function CameraScreen() {
     // Recording promise removed since we're using file-based approach
     shouldStartRecordingRef.current = false;
     setPressStartTime(0);
+    setCaptionText('');
+    setCurrentLocation(null);
+    setArElements([]);
+    setActiveFilter(null);
   };
 
   const handleSendToFriends = async () => {
@@ -430,7 +440,7 @@ export default function CameraScreen() {
             finalMediaUri,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
+              caption: captionText || `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: [], // Stories don't have direct recipients
@@ -455,7 +465,7 @@ export default function CameraScreen() {
             finalMediaUri,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
+              caption: captionText || `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: recipientIds,
@@ -527,6 +537,53 @@ export default function CameraScreen() {
   const clearAllARElements = () => {
     setArElements([]);
     setActiveFilter(null);
+  };
+
+  const handleShowCaptionHelper = async () => {
+    if (!capturedMedia) return;
+    
+    // Get current location for better caption context
+    try {
+      const location = await SnapService.getCurrentLocation();
+      setCurrentLocation(location);
+    } catch (error) {
+      console.log('Could not get location for captions:', error);
+    }
+    
+    setShowCaptionHelper(true);
+  };
+
+  const handleApplyCaption = (caption: string) => {
+    // Add caption as a draggable AR text element
+    const captionElement: ARElement = {
+      id: `caption-${Date.now()}`,
+      type: 'text',
+      content: caption,
+      x: 0.5, // Center horizontally
+      y: 0.8, // Near bottom but draggable
+      scale: 1,
+      rotation: 0,
+      style: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#ffffff',
+        textAlign: 'center',
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+        textShadowColor: 'rgba(0,0,0,0.8)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3,
+      }
+    };
+    
+    // Remove any existing caption elements
+    const filteredElements = arElements.filter(el => !el.id.startsWith('caption-'));
+    setArElements([...filteredElements, captionElement]);
+    
+    // Clear the old caption text state
+    setCaptionText('');
   };
 
   // Add friend selection modal
@@ -709,6 +766,13 @@ export default function CameraScreen() {
               </View>
             </View>
 
+            {/* Caption Instructions */}
+            {arElements.some(el => el.id.startsWith('caption-')) && (
+              <View style={styles.captionInstructions}>
+                <Text style={styles.instructionText}>💡 Drag the caption to reposition it</Text>
+              </View>
+            )}
+
             {/* Bottom Action Buttons */}
             <View style={styles.bottomActions}>
               <Pressable 
@@ -717,6 +781,15 @@ export default function CameraScreen() {
                 disabled={isUploading}
               >
                 <Ionicons name="download" size={20} color="#ffffff" />
+              </Pressable>
+
+              <Pressable 
+                style={[styles.bottomButton, styles.aiCaptionButton]}
+                onPress={handleShowCaptionHelper}
+                disabled={isUploading}
+              >
+                <Ionicons name="sparkles" size={18} color="#ffffff" />
+                <Text style={styles.aiCaptionText}>AI Caption</Text>
               </Pressable>
 
               <Pressable 
@@ -755,6 +828,15 @@ export default function CameraScreen() {
 
           {/* Friend Selection Modal */}
           {renderFriendSelectionModal()}
+
+          {/* Caption Helper Modal */}
+          <CaptionHelper
+            visible={showCaptionHelper}
+            onClose={() => setShowCaptionHelper(false)}
+            onApplyCaption={handleApplyCaption}
+            imageUrl={capturedMedia || ''}
+            location={currentLocation}
+          />
         </View>
       </View>
     );
@@ -1342,5 +1424,33 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     fontSize: 16,
+  },
+
+  aiCaptionButton: {
+    backgroundColor: 'rgba(99,102,241,0.2)',
+    borderColor: '#6366f1',
+    flexDirection: 'row',
+    gap: 6,
+    minWidth: 100,
+  },
+  aiCaptionText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  captionInstructions: {
+    backgroundColor: 'rgba(99,102,241,0.9)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    alignSelf: 'center',
+  },
+  instructionText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 }); 
