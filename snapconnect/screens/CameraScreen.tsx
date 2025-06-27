@@ -758,6 +758,13 @@ export default function CameraScreen() {
                 >
                   <Text style={styles.controlText}>✨</Text>
                 </Pressable>
+                <Pressable 
+                  style={styles.captionButton}
+                  onPress={handleShowCaptionHelper}
+                  disabled={isUploading}
+                >
+                  <Ionicons name="sparkles" size={20} color="#ffffff" />
+                </Pressable>
                 {arElements.length > 0 && (
                   <Pressable style={styles.clearButton} onPress={clearAllARElements}>
                     <Text style={styles.controlText}>🗑️</Text>
@@ -781,15 +788,6 @@ export default function CameraScreen() {
                 disabled={isUploading}
               >
                 <Ionicons name="download" size={20} color="#ffffff" />
-              </Pressable>
-
-              <Pressable 
-                style={[styles.bottomButton, styles.aiCaptionButton]}
-                onPress={handleShowCaptionHelper}
-                disabled={isUploading}
-              >
-                <Ionicons name="sparkles" size={18} color="#ffffff" />
-                <Text style={styles.aiCaptionText}>AI Caption</Text>
               </Pressable>
 
               <Pressable 
@@ -1082,6 +1080,16 @@ const styles = StyleSheet.create({
   arButtonActive: {
     backgroundColor: 'rgba(99, 102, 241, 0.8)',
   },
+  captionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(99, 102, 241, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+  },
   clearButton: {
     width: 44,
     height: 44,
@@ -1300,20 +1308,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingBottom: 50,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+    paddingTop: 16,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   bottomButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 25,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
-    minWidth: 80,
+    minWidth: 70,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
+    maxWidth: 100,
   },
   downloadIcon: {
     fontSize: 24,
@@ -1321,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   bottomButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   modalOverlay: {
@@ -1426,18 +1439,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  aiCaptionButton: {
-    backgroundColor: 'rgba(99,102,241,0.2)',
-    borderColor: '#6366f1',
-    flexDirection: 'row',
-    gap: 6,
-    minWidth: 100,
-  },
-  aiCaptionText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
   captionInstructions: {
     backgroundColor: 'rgba(99,102,241,0.9)',
     borderRadius: 20,

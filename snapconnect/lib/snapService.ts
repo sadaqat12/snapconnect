@@ -16,6 +16,8 @@ export interface SnapData {
     lat: number;
     lng: number;
     address?: string;
+    country?: string;
+    city?: string;
   };
   recipient_ids: string[];
   read_by?: string[];
@@ -148,6 +150,8 @@ export class SnapService {
           lat: location.coords.latitude,
           lng: location.coords.longitude,
           address: address ? `${address.city}, ${address.country}` : undefined,
+          country: address?.country || undefined, // Add country field for analytics
+          city: address?.city || undefined,
         };
       } catch {
         return {
