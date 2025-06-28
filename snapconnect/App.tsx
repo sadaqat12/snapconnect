@@ -23,6 +23,10 @@ import ChatScreen from './screens/ChatScreen';
 import StoriesScreen from './screens/StoriesScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import DiscoverScreen from './screens/DiscoverScreen';
+import LocalInsightsScreen from './screens/LocalInsightsScreen';
+import TravelAdvisorScreen from './screens/TravelAdvisorScreen';
+import CultureCuisineScreen from './screens/CultureCuisineScreen';
+import ItinerarySnapshotScreen from './screens/ItinerarySnapshotScreen';
 
 // Navigation types
 export type MainTabParamList = {
@@ -48,10 +52,19 @@ export type AuthStackParamList = {
   SignUp: undefined;
 };
 
+export type DiscoverStackParamList = {
+  DiscoverHome: undefined;
+  LocalInsights: undefined;
+  TravelAdvisor: undefined;
+  CultureCuisine: undefined;
+  ItinerarySnapshot: undefined;
+};
+
 // Navigators
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
+const DiscoverStack = createNativeStackNavigator<DiscoverStackParamList>();
 
 // Loading screen component
 function LoadingScreen() {
@@ -84,6 +97,50 @@ function FriendsStackNavigator() {
   );
 }
 
+// Discover stack navigator to handle feature navigation
+function DiscoverStackNavigator() {
+  return (
+    <DiscoverStack.Navigator 
+      screenOptions={{ 
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: '#0a0a0a',
+        },
+        headerTintColor: '#ffffff',
+        headerTitleStyle: {
+          fontWeight: 'bold',
+        },
+      }}
+    >
+      <DiscoverStack.Screen 
+        name="DiscoverHome" 
+        component={DiscoverScreen}
+        options={{ headerShown: false }}
+      />
+      <DiscoverStack.Screen 
+        name="LocalInsights" 
+        component={LocalInsightsScreen}
+        options={{ headerShown: false }}
+      />
+      <DiscoverStack.Screen 
+        name="TravelAdvisor" 
+        component={TravelAdvisorScreen}
+        options={{ headerShown: false }}
+      />
+      <DiscoverStack.Screen 
+        name="CultureCuisine" 
+        component={CultureCuisineScreen}
+        options={{ headerShown: false }}
+      />
+      <DiscoverStack.Screen 
+        name="ItinerarySnapshot" 
+        component={ItinerarySnapshotScreen}
+        options={{ headerShown: false }}
+      />
+    </DiscoverStack.Navigator>
+  );
+}
+
 // Main tabs navigator with professional icons
 function MainTabsNavigator() {
   return (
@@ -106,6 +163,7 @@ function MainTabsNavigator() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
+          let iconColor = color;
           
           if (route.name === 'Camera') {
             iconName = focused ? 'camera' : 'camera-outline';
@@ -115,11 +173,14 @@ function MainTabsNavigator() {
             iconName = focused ? 'library' : 'library-outline';
           } else if (route.name === 'Discover') {
             iconName = focused ? 'compass' : 'compass-outline';
+            iconColor = '#F59E0B'; // Always golden for Discover
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
           
-          return <Ionicons name={iconName} size={size || 24} color={color} />;
+
+          
+          return <Ionicons name={iconName} size={size || 24} color={iconColor} />;
         },
       })}
     >
@@ -134,14 +195,21 @@ function MainTabsNavigator() {
         options={{ tabBarLabel: 'Friends' }}
       />
       <MainTabs.Screen 
+        name="Discover" 
+        component={DiscoverStackNavigator}
+        options={{ 
+          tabBarLabel: 'Discover',
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '700',
+            color: '#F59E0B',
+          },
+        }}
+      />
+      <MainTabs.Screen 
         name="Stories" 
         component={StoriesScreen}
         options={{ tabBarLabel: 'Stories' }}
-      />
-      <MainTabs.Screen 
-        name="Discover" 
-        component={DiscoverScreen}
-        options={{ tabBarLabel: 'Discover' }}
       />
       <MainTabs.Screen 
         name="Profile" 
