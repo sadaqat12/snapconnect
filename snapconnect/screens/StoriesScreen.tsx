@@ -6,9 +6,19 @@ import { StoryData, StoryService } from '../lib/storyService';
 import StoryViewer from '../components/StoryViewer';
 import { supabase } from '../lib/supabase';
 
+interface FlashbackSnap {
+  id: string;
+  media_url: string;
+  created_at: string;
+  location?: string;
+  caption?: string;
+  years_ago: number;
+}
+
 export default function StoriesScreen() {
   const [myStories, setMyStories] = useState<StoryData[]>([]);
   const [friendStories, setFriendStories] = useState<StoryData[]>([]);
+  const [flashbackSnaps, setFlashbackSnaps] = useState<FlashbackSnap[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStories, setSelectedStories] = useState<StoryData[]>([]);
@@ -27,6 +37,7 @@ export default function StoriesScreen() {
 
   useEffect(() => {
     loadStories();
+    loadFlashbackSnaps();
     setupRealtimeSubscription();
     
     // Cleanup old stories periodically
@@ -51,6 +62,7 @@ export default function StoriesScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadStories();
+      loadFlashbackSnaps();
     }, [])
   );
 
@@ -64,9 +76,14 @@ export default function StoriesScreen() {
           schema: 'public',
           table: 'stories',
         },
-        () => loadStories()
+        (payload) => {
+          console.log('Stories table change detected:', payload);
+          loadStories();
+        }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Stories realtime subscription status:', status);
+      });
   };
 
   const loadStories = async () => {
@@ -166,7 +183,7 @@ export default function StoriesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadStories();
+    await Promise.all([loadStories(), loadFlashbackSnaps()]);
   };
 
   const handleMyStoryPress = (story: StoryData, index: number) => {
@@ -197,7 +214,158 @@ export default function StoriesScreen() {
     setIsStoryViewerVisible(true);
   };
 
+  const loadFlashbackSnaps = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
+      const today = new Date();
+      const currentMonth = today.getMonth() + 1; // getMonth() returns 0-11
+      const currentDay = today.getDate();
+
+      // Query for snaps from the same month/day in previous years
+      const { data: snaps, error } = await supabase
+        .from('snaps')
+        .select('id, media_url, created_at, location, caption')
+        .eq('creator_id', user.id)
+        .gte('created_at', new Date(today.getFullYear() - 5, 0, 1).toISOString()) // Last 5 years
+        .lt('created_at', new Date(today.getFullYear(), 0, 1).toISOString()) // Before this year
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading flashback snaps:', error);
+        return;
+      }
+
+      let flashbacks: FlashbackSnap[] = [];
+
+      if (snaps) {
+        // Filter snaps to same month/day and calculate years ago
+        flashbacks = snaps
+          .filter(snap => {
+            const snapDate = new Date(snap.created_at);
+            return snapDate.getMonth() + 1 === currentMonth && snapDate.getDate() === currentDay;
+          })
+          .map(snap => {
+            const snapDate = new Date(snap.created_at);
+            const yearsAgo = today.getFullYear() - snapDate.getFullYear();
+            return {
+              ...snap,
+              years_ago: yearsAgo
+            };
+          })
+          .slice(0, 5); // Limit to 5 flashbacks
+      }
+
+      // If no real flashbacks, add sample data for demonstration
+      if (flashbacks.length === 0) {
+        flashbacks = generateSampleFlashbacks(today);
+      }
+
+      console.log('Loaded flashback snaps:', flashbacks.length);
+      setFlashbackSnaps(flashbacks);
+    } catch (error) {
+      console.error('Error loading flashback snaps:', error);
+    }
+  };
+
+  const generateSampleFlashbacks = (today: Date): FlashbackSnap[] => {
+    const sampleImages = [
+      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=400&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&h=600&fit=crop'
+    ];
+
+    const sampleLocations = [
+      'Santorini, Greece',
+      'Banff National Park, Canada', 
+      'Tropical Beach Paradise',
+      'Mountain Lake Retreat',
+      'European Countryside'
+    ];
+
+    const sampleCaptions = [
+      'Chasing sunsets and dreams ✨',
+      'Nature therapy at its finest 🏔️',
+      'Paradise found 🏝️',
+      'Peaceful moments by the lake',
+      'Wandering through cobblestone streets'
+    ];
+
+    return Array.from({ length: 3 }, (_, index) => {
+      const yearsAgo = index + 1;
+      const flashbackDate = new Date(today.getFullYear() - yearsAgo, today.getMonth(), today.getDate());
+      
+      return {
+        id: `sample-${index}`,
+        media_url: sampleImages[index],
+        created_at: flashbackDate.toISOString(),
+        location: sampleLocations[index],
+        caption: sampleCaptions[index],
+        years_ago: yearsAgo
+      };
+    });
+  };
+
+  const handleFlashbackPress = async (snap: FlashbackSnap) => {
+    try {
+      // Get current user for proper attribution
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id || 'current-user';
+      
+      // Convert flashback snap to StoryData format for StoryViewer
+      const flashbackStory: StoryData = {
+        id: `flashback-${snap.id}`,
+        creator_id: userId,
+        snap_ids: [snap.id],
+        created_at: snap.created_at,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours from now
+        view_count: 0,
+        viewers: [],
+        is_viewed: true, // Mark as viewed since it's a flashback
+        snaps: [{
+          id: snap.id,
+          creator_id: userId,
+          recipient_ids: [],
+          media_url: snap.media_url,
+          media_type: 'photo',
+          created_at: snap.created_at,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          location: snap.location ? {
+            lat: 0,
+            lng: 0,
+            address: snap.location
+          } : undefined,
+          caption: `🕰️ ${snap.years_ago} year${snap.years_ago !== 1 ? 's' : ''} ago${snap.location ? ` • ${snap.location}` : ''}\n\n${snap.caption || 'Travel Memory'}`
+        }],
+        creator: {
+          id: userId,
+          username: 'You',
+          name: 'You'
+        }
+      };
+
+      // Create a special flashback stories array
+      const flashbackStories = [flashbackStory];
+      
+      // Set up the story viewer for flashback
+      setSelectedStories(flashbackStories);
+      setInitialStoryIndex(0);
+      setIsStoryViewerVisible(true);
+    } catch (error) {
+      console.error('Error opening flashback:', error);
+      // Fallback to alert if StoryViewer fails
+      const isSample = snap.id.startsWith('sample-');
+      Alert.alert(
+        '🕰️ Travel Memory',
+        isSample 
+          ? `✨ Sample Memory\nFrom ${snap.years_ago} year${snap.years_ago !== 1 ? 's' : ''} ago at ${snap.location}!\n\n${snap.caption}\n\n💡 This is demo data. Start creating travel stories to build your own flashback timeline!`
+          : `From ${snap.years_ago} year${snap.years_ago !== 1 ? 's' : ''} ago${snap.location ? ` at ${snap.location}` : ''}!\n\n${snap.caption || 'What a great memory!'}`
+      );
+    }
+  };
 
   const formatTimeAgo = (dateString?: string) => {
     if (!dateString) return '';
@@ -299,15 +467,29 @@ export default function StoriesScreen() {
                 <View style={styles.friendStoriesGrid}>
                   {friendStories.map((story, index) => {
                   const thumbnailUrl = getStoryThumbnail(story);
+                  
+                  // Debug logging for viewed state
+                  console.log(`Story UI Debug - ${story.creator?.username}: viewed=${story.is_viewed}, viewers=${story.viewers?.length || 0}`);
+                  
                   return (
                     <Pressable 
                       key={story.id} 
                       style={styles.friendStoryCard}
                       onPress={() => handleFriendStoryPress(story, index)}
                     >
-                      <View style={[styles.storyRing, !story.is_viewed && styles.unviewedRing]}>
+                      <View style={[
+                        styles.storyRing, 
+                        !story.is_viewed && styles.unviewedRing,
+                        story.is_viewed && styles.viewedRing
+                      ]}>
                         {thumbnailUrl ? (
-                          <Image source={{ uri: thumbnailUrl }} style={styles.friendStoryThumbnailImage} />
+                          <Image 
+                            source={{ uri: thumbnailUrl }} 
+                            style={[
+                              styles.friendStoryThumbnailImage,
+                              story.is_viewed && styles.viewedThumbnail
+                            ]} 
+                          />
                         ) : (
                           <View style={styles.friendStoryThumbnailPlaceholder}>
                             <Ionicons name="camera" size={20} color="#9CA3AF" />
@@ -334,6 +516,56 @@ export default function StoriesScreen() {
                   );
                 })}
                 </View>
+                            )}
+            </View>
+
+            {/* Flashback Explorer Section */}
+            <View style={styles.section}>
+              <View style={styles.flashbackHeader}>
+                <Text style={styles.sectionTitle}>🕰️ Flashback Explorer</Text>
+                <Text style={styles.flashbackSubtitle}>Travel memories from this day</Text>
+              </View>
+              {flashbackSnaps.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="time-outline" size={48} color="#6B7280" />
+                  <Text style={styles.emptyText}>
+                    No memories from this day in previous years
+                  </Text>
+                  <Text style={styles.emptySubtext}>
+                    Keep creating travel stories to build your memory timeline!
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesRow}>
+                  {flashbackSnaps.map((snap, index) => (
+                    <Pressable 
+                      key={snap.id} 
+                      style={styles.flashbackSnapCard}
+                      onPress={() => handleFlashbackPress(snap)}
+                    >
+                      <Image source={{ uri: snap.media_url }} style={styles.flashbackSnapImage} />
+                      <View style={styles.flashbackOverlay}>
+                        <View style={styles.flashbackBadge}>
+                          <Text style={styles.flashbackYears}>
+                            {snap.years_ago}y ago
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.flashbackSnapInfo}>
+                        <Text style={styles.flashbackSnapCaption} numberOfLines={1}>
+                          {snap.caption || snap.location || 'Travel Memory'}
+                        </Text>
+                        <Text style={styles.flashbackSnapTimestamp}>
+                          {new Date(snap.created_at).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                          })}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               )}
             </View>
           </>
@@ -387,7 +619,6 @@ export default function StoriesScreen() {
           </View>
         </View>
 
-
       </ScrollView>
       
       {/* Story Viewer */}
@@ -402,6 +633,11 @@ export default function StoriesScreen() {
             console.log('Reloading stories after viewing...');
             loadStories();
           }, 500);
+        }}
+        onStoryViewed={(storyId) => {
+          console.log('Story viewed callback triggered for:', storyId);
+          // Immediately refresh stories when a story is viewed
+          loadStories();
         }}
       />
     </View>
@@ -500,6 +736,15 @@ const styles = StyleSheet.create({
   },
   unviewedRing: {
     borderColor: '#6366f1',
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  viewedRing: {
+    borderColor: '#4B5563',
+    opacity: 0.7,
   },
   friendStoryThumbnail: {
     fontSize: 32,
@@ -596,6 +841,9 @@ const styles = StyleSheet.create({
     height: 74,
     borderRadius: 37,
   },
+  viewedThumbnail: {
+    opacity: 0.6,
+  },
   friendAvatarContainer: {
     width: 20,
     height: 20,
@@ -629,6 +877,69 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  flashbackHeader: {
+    marginBottom: 16,
+  },
+  flashbackSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 20,
+  },
+  flashbackSnapCard: {
+    width: 120,
+    height: 160,
+    borderRadius: 12,
+    backgroundColor: '#1a1a2e',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#333333',
+    marginRight: 12,
+    position: 'relative',
+  },
+  flashbackSnapImage: {
+    flex: 1,
+    width: '100%',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  flashbackOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 1,
+  },
+  flashbackBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  flashbackYears: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  flashbackSnapInfo: {
+    padding: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  flashbackSnapCaption: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  flashbackSnapTimestamp: {
+    color: '#9CA3AF',
+    fontSize: 10,
   },
 
 }); 

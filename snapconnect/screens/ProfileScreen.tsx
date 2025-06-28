@@ -103,7 +103,8 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (profile) {
       setName(profile.name || '');
-      setTravelInterests(profile.travel_style_tags || []);
+      // Try travel_preferences first (for Edge Function), then fall back to travel_style_tags
+      setTravelInterests(profile.travel_preferences || profile.travel_style_tags || []);
     }
   }, [profile]);
 
@@ -490,7 +491,20 @@ export default function ProfileScreen() {
 
   const handleTravelInterestSave = async () => {
     try {
-      await updateProfile({ travel_style_tags: travelInterests });
+      // Update both travel_style_tags (for compatibility) and travel_preferences (for Edge Function)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('users')
+        .update({ 
+          travel_style_tags: travelInterests,
+          travel_preferences: travelInterests 
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
       setShowTravelInterestsModal(false);
       Alert.alert('Success', 'Travel interests updated!');
     } catch (error: any) {
@@ -1190,27 +1204,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 32,
+    paddingHorizontal: 2,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 8,
+    padding: 12,
     alignItems: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 2,
     borderWidth: 1,
     borderColor: '#333333',
+    minWidth: 0, // Allow flex shrinking
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#6366f1',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9CA3AF',
     fontWeight: '500',
+    textAlign: 'center',
   },
   section: {
     marginBottom: 24,

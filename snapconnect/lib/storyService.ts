@@ -204,19 +204,31 @@ export class StoryService {
               console.warn('Error fetching snaps for story:', snapsError);
             }
 
+            // Use the new function to check if story is fully viewed
+            const { data: isViewedResult, error: viewedError } = await supabase
+              .rpc('is_story_fully_viewed', {
+                story_id_param: story.id,
+                user_id_param: user.id
+              });
+
+            const isViewed = viewedError ? (story.viewers?.includes(user.id) || false) : (isViewedResult || false);
+
             return {
               ...story,
               snaps: snapsData as SnapData[] || [],
               view_count: story.viewers?.length || 0,
-              is_viewed: story.viewers?.includes(user.id) || false,
+              is_viewed: isViewed,
             };
           } catch (error) {
             console.warn('Error enriching story:', error);
+            // Fallback to legacy logic if there's an error
+            const isViewed = story.viewers?.includes(user.id) || false;
+            
             return {
               ...story,
               snaps: [],
               view_count: story.viewers?.length || 0,
-              is_viewed: story.viewers?.includes(user.id) || false,
+              is_viewed: isViewed,
             };
           }
         })
@@ -263,6 +275,9 @@ export class StoryService {
       }
 
       // Get stories from friends (without the problematic join)
+      // Add a small delay to ensure any recent database updates are reflected
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const { data, error } = await supabase
         .from('stories')
         .select('*')
@@ -302,14 +317,25 @@ export class StoryService {
 
             console.log(`Story ${story.id} - snaps:`, snapsData?.length || 0);
 
-            const isViewed = story.viewers?.includes(user.id) || false;
+            // Use the new function to check if story is fully viewed
+            const { data: isViewedResult, error: viewedError } = await supabase
+              .rpc('is_story_fully_viewed', {
+                story_id_param: story.id,
+                user_id_param: user.id
+              });
+
+            const isViewed = viewedError ? (story.viewers?.includes(user.id) || false) : (isViewedResult || false);
             
             console.log(`Story ${story.id} enrichment:`, {
               storyId: story.id,
               creator: creatorData?.username,
               viewers: story.viewers,
+              viewersCount: story.viewers?.length || 0,
               currentUserId: user.id,
-              isViewed
+              isViewed,
+              isViewedFromFunction: isViewedResult,
+              viewedError: viewedError?.message,
+              viewersArray: JSON.stringify(story.viewers)
             });
 
             return {
@@ -321,12 +347,15 @@ export class StoryService {
             };
           } catch (error) {
             console.warn('Error enriching friend story:', error);
+            // Fallback to legacy logic if there's an error
+            const isViewed = story.viewers?.includes(user.id) || false;
+            
             return {
               ...story,
               creator: { id: story.creator_id, username: '', name: '' },
               snaps: [],
               view_count: story.viewers?.length || 0,
-              is_viewed: story.viewers?.includes(user.id) || false,
+              is_viewed: isViewed,
             };
           }
         })
@@ -376,11 +405,20 @@ export class StoryService {
         console.warn('Error fetching snaps for story:', snapsError);
       }
 
+      // Use the new function to check if story is fully viewed
+      const { data: isViewedResult, error: viewedError } = await supabase
+        .rpc('is_story_fully_viewed', {
+          story_id_param: data.id,
+          user_id_param: user.id
+        });
+
+      const isViewed = viewedError ? (data.viewers?.includes(user.id) || false) : (isViewedResult || false);
+
       return {
         ...data as StoryData,
         snaps: snapsData as SnapData[] || [],
         view_count: data.viewers?.length || 0,
-        is_viewed: data.viewers?.includes(user.id) || false,
+        is_viewed: isViewed,
       };
     } catch (error) {
       console.error('Get story by ID error:', error);
@@ -415,26 +453,57 @@ export class StoryService {
 
       console.log(`Current viewers for story ${storyId}:`, story.viewers);
 
-      // Add user to viewers array if not already there
-      const viewers = story.viewers || [];
-      if (!viewers.includes(user.id)) {
-        viewers.push(user.id);
+      // Use the new mark_story_viewed function which handles timestamp tracking
+      const { error: updateError } = await supabase.rpc('mark_story_viewed', {
+        story_id_param: storyId,
+        user_id_param: user.id
+      });
 
-        console.log(`Adding user ${user.id} to viewers. New viewers:`, viewers);
+      if (updateError) {
+        console.error('Error marking story as viewed with RPC:', updateError);
+        
+        // Fallback to manual approach if RPC fails
+        console.log('Trying fallback manual approach...');
+        
+        try {
+          // Insert/update story view record manually
+          const { error: viewError } = await supabase
+            .from('story_views')
+            .upsert({
+              story_id: storyId,
+              user_id: user.id,
+              last_viewed_at: new Date().toISOString()
+            }, {
+              onConflict: 'story_id,user_id'
+            });
 
-        const { error: updateError } = await supabase
-          .from('stories')
-          .update({ viewers })
-          .eq('id', storyId);
+          if (viewError) {
+            console.error('Error inserting story view:', viewError);
+          }
 
-        if (updateError) {
-          console.error('Error updating story viewers:', updateError);
-          throw updateError;
+          // Update legacy viewers array
+          const viewers = story.viewers || [];
+          if (!viewers.includes(user.id)) {
+            viewers.push(user.id);
+            
+            const { error: fallbackError } = await supabase
+              .from('stories')
+              .update({ viewers })
+              .eq('id', storyId);
+
+            if (fallbackError) {
+              console.error('Fallback update also failed:', fallbackError);
+              throw fallbackError;
+            }
+          }
+          
+          console.log('Successfully marked story as viewed using fallback approach');
+        } catch (fallbackError) {
+          console.error('Fallback approach failed:', fallbackError);
+          // Don't throw - just log the error so the app continues working
         }
-
-        console.log(`Successfully marked story ${storyId} as viewed`);
       } else {
-        console.log(`User ${user.id} already viewed story ${storyId}`);
+        console.log(`Successfully marked story ${storyId} as viewed with timestamp tracking`);
       }
     } catch (error) {
       console.error('Mark story as viewed error:', error);

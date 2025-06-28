@@ -9,6 +9,7 @@ export type Profile = {
   name: string | null;
   avatar_url: string | null;
   travel_style_tags: string[] | null;
+  travel_preferences: string[] | null;
   preferences: Record<string, any> | null;
 };
 

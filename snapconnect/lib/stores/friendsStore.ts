@@ -8,7 +8,7 @@ export type Friend = {
   username: string;
   name: string | null;
   avatar_url: string | null;
-  status: 'pending' | 'accepted' | 'blocked';
+  status: 'pending' | 'accepted' | 'blocked' | 'none';
 };
 
 type DatabaseUser = {
@@ -156,41 +156,82 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
       const userId = session.data.session?.user.id;
       if (!userId) throw new Error('Not authenticated');
 
+      console.log('Sending friend request:', { userId, email });
+
       // First find the user by email
-      const { data: users, error: userError } = await supabase
+      const { data: targetUser, error: userError } = await supabase
         .from('users')
-        .select('id, email, name')
+        .select('id, email, username, name')
         .eq('email', email)
         .single();
 
-      if (userError) throw userError;
-      if (!users) throw new Error('User not found');
+      if (userError) {
+        console.error('Error finding user:', userError);
+        throw new Error('User not found');
+      }
+      if (!targetUser) throw new Error('User not found');
 
-      // Check if friendship already exists
+      console.log('Found target user:', targetUser);
+
+      // Check if trying to add yourself
+      if (targetUser.id === userId) {
+        throw new Error('Cannot send friend request to yourself');
+      }
+
+      // Check if friendship already exists (in either direction)
       const { data: existing, error: checkError } = await supabase
         .from('friendships')
-        .select('id, status')
-        .or(`and(user_id.eq.${userId},friend_id.eq.${users.id}),and(user_id.eq.${users.id},friend_id.eq.${userId})`)
-        .single();
+        .select('id, status, user_id, friend_id')
+        .or(`and(user_id.eq.${userId},friend_id.eq.${targetUser.id}),and(user_id.eq.${targetUser.id},friend_id.eq.${userId})`);
 
-      if (checkError && checkError.code !== 'PGRST116') throw checkError;
-      if (existing) throw new Error('Friendship already exists');
+      if (checkError) {
+        console.error('Error checking existing friendship:', checkError);
+        throw checkError;
+      }
+
+      console.log('Existing friendships:', existing);
+
+      if (existing && existing.length > 0) {
+        const friendship = existing[0];
+        if (friendship.status === 'accepted') {
+          throw new Error('You are already friends with this user');
+        } else if (friendship.status === 'pending') {
+          if (friendship.user_id === userId) {
+            throw new Error('Friend request already sent');
+          } else {
+            throw new Error('This user has already sent you a friend request');
+          }
+        }
+      }
 
       // Send friend request
-      const { error: insertError } = await supabase
+      const { data: newFriendship, error: insertError } = await supabase
         .from('friendships')
         .insert({
           user_id: userId,
-          friend_id: users.id,
+          friend_id: targetUser.id,
           status: 'pending'
-        });
+        })
+        .select()
+        .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Error inserting friendship:', insertError);
+        throw insertError;
+      }
+
+      console.log('Friend request sent successfully:', newFriendship);
 
       set({ isLoading: false });
-      await get().fetchPendingRequests();
+      // Refresh both friends and pending requests
+      await Promise.all([
+        get().fetchFriends(),
+        get().fetchPendingRequests()
+      ]);
     } catch (error: any) {
+      console.error('Failed to send friend request:', error);
       set({ error: error.message, isLoading: false });
+      throw error; // Re-throw so the UI can handle it
     }
   },
 
@@ -332,21 +373,31 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
       const formatResults = (users: DatabaseUser[]) => {
         return users.map(user => {
           const relationship = relationshipMap.get(user.id);
-          let status: 'pending' | 'accepted' | 'blocked';
+          let status: 'pending' | 'accepted' | 'blocked' | 'none';
           
-          switch (relationship) {
-            case 'accepted':
-              status = 'accepted';
-              break;
-            case 'pending-sent':
-              status = 'pending';
-              break;
-            case 'pending-received':
-              status = 'blocked'; // We'll use this to indicate "Accept Request"
-              break;
-            default:
-              status = 'pending'; // No relationship - can add friend
+          console.log(`Formatting user ${user.username} (${user.id}) with relationship:`, relationship);
+          
+          if (!relationship) {
+            // No relationship exists - show "Add Friend"
+            status = 'none';
+            console.log(`User ${user.username} has no relationship - setting status to 'none' (will show Add Friend)`);
+          } else {
+            switch (relationship) {
+              case 'accepted':
+                status = 'accepted';
+                break;
+              case 'pending-sent':
+                status = 'pending'; // We sent a request, show "Pending"
+                break;
+              case 'pending-received':
+                status = 'blocked'; // They sent us a request, show "Accept Request"
+                break;
+              default:
+                status = 'none'; // Fallback to "Add Friend"
+            }
           }
+
+          console.log(`Final status for ${user.username}:`, status);
 
           return {
             id: user.id,

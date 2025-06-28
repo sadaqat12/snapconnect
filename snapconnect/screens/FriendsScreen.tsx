@@ -346,12 +346,16 @@ export default function FriendsScreen() {
 
   const handleSendRequest = async (email: string) => {
     try {
+      console.log('Sending friend request to:', email);
       await sendFriendRequest(email);
       setSearchQuery('');
       setSearchResults([]);
       Alert.alert('Success', 'Friend request sent!');
+      // Refresh the data to update the UI
+      await loadData();
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      console.error('Error sending friend request:', error);
+      Alert.alert('Error', error.message || 'Failed to send friend request');
     }
   };
 
@@ -524,16 +528,38 @@ export default function FriendsScreen() {
 
   const renderSearchResult = ({ item }: { item: Friend }) => {
     const getButtonConfig = () => {
+      console.log('Rendering search result for user:', item.username, 'with status:', item.status);
+      
       switch (item.status) {
         case 'accepted':
-          return { text: 'Friends', style: styles.addButton, onPress: () => {}, disabled: true };
+          return { 
+            text: 'Friends', 
+            style: [styles.addButton, { backgroundColor: '#10B981' }], 
+            onPress: () => {}, 
+            disabled: true 
+          };
         case 'pending':
-          return { text: 'Pending', style: styles.addButton, onPress: () => {}, disabled: true };
-        case 'blocked': // Using 'blocked' as placeholder for "Accept Request"
+          // This means we sent a friend request
+          return { 
+            text: 'Pending', 
+            style: [styles.addButton, { backgroundColor: '#6B7280' }], 
+            onPress: () => {}, 
+            disabled: true 
+          };
+        case 'blocked':
+          // They sent us a friend request - show "Accept Request"
           return { 
             text: 'Accept Request', 
-            style: styles.addButton, 
+            style: [styles.addButton, { backgroundColor: '#3B82F6' }], 
             onPress: () => acceptFriendRequest(item.id),
+            disabled: false 
+          };
+        case 'none':
+          // No relationship exists - show "Add Friend"
+          return { 
+            text: 'Add Friend', 
+            style: styles.addButton, 
+            onPress: () => handleSendRequest(item.email),
             disabled: false 
           };
         default:

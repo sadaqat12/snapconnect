@@ -20,6 +20,7 @@ interface StoryViewerProps {
   initialStoryIndex: number;
   isVisible: boolean;
   onClose: () => void;
+  onStoryViewed?: (storyId: string) => void;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -28,7 +29,8 @@ export default function StoryViewer({
   stories, 
   initialStoryIndex, 
   isVisible, 
-  onClose 
+  onClose,
+  onStoryViewed
 }: StoryViewerProps) {
   const [currentStoryIndex, setCurrentStoryIndex] = useState(initialStoryIndex);
   const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
@@ -42,8 +44,16 @@ export default function StoryViewer({
   const currentStory = stories[currentStoryIndex];
   const currentSnap = currentStory?.snaps?.[currentSnapIndex];
 
+  // Update currentStoryIndex when initialStoryIndex changes
+  useEffect(() => {
+    console.log('StoryViewer: initialStoryIndex changed to:', initialStoryIndex);
+    setCurrentStoryIndex(initialStoryIndex);
+  }, [initialStoryIndex]);
+
   useEffect(() => {
     if (isVisible && currentStory) {
+      console.log('StoryViewer: Starting story viewing for story index:', currentStoryIndex, 'Story ID:', currentStory.id);
+      
       // Initialize progress animations for current story
       const snapCount = currentStory.snaps?.length || 0;
       progressAnimations.current = Array(snapCount).fill(0).map(() => new Animated.Value(0));
@@ -51,9 +61,16 @@ export default function StoryViewer({
       // Start viewing the story
       startStoryViewing();
       
-      // Mark story as viewed
-      if (currentStory.id) {
-        StoryService.markStoryAsViewed(currentStory.id).catch(console.error);
+      // Mark story as viewed (skip for flashback stories)
+      if (currentStory.id && !currentStory.id.startsWith('flashback-')) {
+        StoryService.markStoryAsViewed(currentStory.id)
+          .then(() => {
+            // Notify parent component that story was viewed
+            if (onStoryViewed) {
+              onStoryViewed(currentStory.id!);
+            }
+          })
+          .catch(console.error);
       }
     }
   }, [isVisible, currentStoryIndex]);
@@ -112,9 +129,16 @@ export default function StoryViewer({
   };
 
   const goToNextStory = () => {
-    // Mark current story as viewed before moving to next
-    if (currentStory?.id) {
-      StoryService.markStoryAsViewed(currentStory.id).catch(console.error);
+    // Mark current story as viewed before moving to next (skip for flashback stories)
+    if (currentStory?.id && !currentStory.id.startsWith('flashback-')) {
+      StoryService.markStoryAsViewed(currentStory.id)
+        .then(() => {
+          // Notify parent component that story was viewed
+          if (onStoryViewed) {
+            onStoryViewed(currentStory.id!);
+          }
+        })
+        .catch(console.error);
     }
     
     if (currentStoryIndex < stories.length - 1) {
@@ -182,7 +206,14 @@ export default function StoryViewer({
       console.log('Swipe down detected - closing story');
       // Mark current story as viewed before closing
       if (currentStory?.id) {
-        StoryService.markStoryAsViewed(currentStory.id).catch(console.error);
+        StoryService.markStoryAsViewed(currentStory.id)
+          .then(() => {
+            // Notify parent component that story was viewed
+            if (onStoryViewed) {
+              onStoryViewed(currentStory.id!);
+            }
+          })
+          .catch(console.error);
       }
       onClose();
     }

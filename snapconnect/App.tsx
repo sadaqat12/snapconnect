@@ -22,12 +22,14 @@ import FriendsScreen from './screens/FriendsScreen';
 import ChatScreen from './screens/ChatScreen';
 import StoriesScreen from './screens/StoriesScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import DiscoverScreen from './screens/DiscoverScreen';
 
 // Navigation types
 export type MainTabParamList = {
   Camera: undefined;
   Friends: undefined;
   Stories: undefined;
+  Discover: undefined;
   Profile: undefined;
 };
 
@@ -111,6 +113,8 @@ function MainTabsNavigator() {
             iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Stories') {
             iconName = focused ? 'library' : 'library-outline';
+          } else if (route.name === 'Discover') {
+            iconName = focused ? 'compass' : 'compass-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -133,6 +137,11 @@ function MainTabsNavigator() {
         name="Stories" 
         component={StoriesScreen}
         options={{ tabBarLabel: 'Stories' }}
+      />
+      <MainTabs.Screen 
+        name="Discover" 
+        component={DiscoverScreen}
+        options={{ tabBarLabel: 'Discover' }}
       />
       <MainTabs.Screen 
         name="Profile" 
