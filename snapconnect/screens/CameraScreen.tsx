@@ -14,6 +14,7 @@ import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
 import ARFilterPanel, { ARFilter, ARElement } from '../components/ARFilterPanel';
 import AROverlay from '../components/AROverlay';
 import ViewShot, { captureRef } from 'react-native-view-shot';
+import CaptionHelper from '../components/CaptionHelper';
 
 export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -42,6 +43,11 @@ export default function CameraScreen() {
   const [showARPanel, setShowARPanel] = useState(false);
   const [arElements, setArElements] = useState<ARElement[]>([]);
   const [activeFilter, setActiveFilter] = useState<ARFilter | null>(null);
+  
+  // Caption Helper state
+  const [showCaptionHelper, setShowCaptionHelper] = useState(false);
+  const [captionText, setCaptionText] = useState('');
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
   
   // Ref for capturing preview with overlays
   const previewRef = useRef<any>(null);
@@ -298,6 +304,10 @@ export default function CameraScreen() {
     // Recording promise removed since we're using file-based approach
     shouldStartRecordingRef.current = false;
     setPressStartTime(0);
+    setCaptionText('');
+    setCurrentLocation(null);
+    setArElements([]);
+    setActiveFilter(null);
   };
 
   const handleSendToFriends = async () => {
@@ -430,7 +440,7 @@ export default function CameraScreen() {
             finalMediaUri,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
+              caption: captionText || `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Story`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: [], // Stories don't have direct recipients
@@ -455,7 +465,7 @@ export default function CameraScreen() {
             finalMediaUri,
             capturedMediaType,
             {
-              caption: `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
+              caption: captionText || `${capturedMediaType === 'photo' ? 'Photo' : 'Video'} Shared via SnapConnect`,
               includeLocation: true,
               duration: capturedMediaType === 'photo' ? 10 : 30,
               recipients: recipientIds,
@@ -527,6 +537,53 @@ export default function CameraScreen() {
   const clearAllARElements = () => {
     setArElements([]);
     setActiveFilter(null);
+  };
+
+  const handleShowCaptionHelper = async () => {
+    if (!capturedMedia) return;
+    
+    // Get current location for better caption context
+    try {
+      const location = await SnapService.getCurrentLocation();
+      setCurrentLocation(location);
+    } catch (error) {
+      console.log('Could not get location for captions:', error);
+    }
+    
+    setShowCaptionHelper(true);
+  };
+
+  const handleApplyCaption = (caption: string) => {
+    // Add caption as a draggable AR text element
+    const captionElement: ARElement = {
+      id: `caption-${Date.now()}`,
+      type: 'text',
+      content: caption,
+      x: 0.5, // Center horizontally
+      y: 0.8, // Near bottom but draggable
+      scale: 1,
+      rotation: 0,
+      style: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#ffffff',
+        textAlign: 'center',
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+        textShadowColor: 'rgba(0,0,0,0.8)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3,
+      }
+    };
+    
+    // Remove any existing caption elements
+    const filteredElements = arElements.filter(el => !el.id.startsWith('caption-'));
+    setArElements([...filteredElements, captionElement]);
+    
+    // Clear the old caption text state
+    setCaptionText('');
   };
 
   // Add friend selection modal
@@ -701,6 +758,13 @@ export default function CameraScreen() {
                 >
                   <Text style={styles.controlText}>✨</Text>
                 </Pressable>
+                <Pressable 
+                  style={styles.captionButton}
+                  onPress={handleShowCaptionHelper}
+                  disabled={isUploading}
+                >
+                  <Ionicons name="sparkles" size={20} color="#ffffff" />
+                </Pressable>
                 {arElements.length > 0 && (
                   <Pressable style={styles.clearButton} onPress={clearAllARElements}>
                     <Text style={styles.controlText}>🗑️</Text>
@@ -708,6 +772,13 @@ export default function CameraScreen() {
                 )}
               </View>
             </View>
+
+            {/* Caption Instructions */}
+            {arElements.some(el => el.id.startsWith('caption-')) && (
+              <View style={styles.captionInstructions}>
+                <Text style={styles.instructionText}>💡 Drag the caption to reposition it</Text>
+              </View>
+            )}
 
             {/* Bottom Action Buttons */}
             <View style={styles.bottomActions}>
@@ -755,6 +826,15 @@ export default function CameraScreen() {
 
           {/* Friend Selection Modal */}
           {renderFriendSelectionModal()}
+
+          {/* Caption Helper Modal */}
+          <CaptionHelper
+            visible={showCaptionHelper}
+            onClose={() => setShowCaptionHelper(false)}
+            onApplyCaption={handleApplyCaption}
+            imageUrl={capturedMedia || ''}
+            location={currentLocation}
+          />
         </View>
       </View>
     );
@@ -1000,6 +1080,16 @@ const styles = StyleSheet.create({
   arButtonActive: {
     backgroundColor: 'rgba(99, 102, 241, 0.8)',
   },
+  captionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(99, 102, 241, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+  },
   clearButton: {
     width: 44,
     height: 44,
@@ -1218,20 +1308,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingBottom: 50,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+    paddingTop: 16,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   bottomButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 25,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
-    minWidth: 80,
+    minWidth: 70,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
+    maxWidth: 100,
   },
   downloadIcon: {
     fontSize: 24,
@@ -1239,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   bottomButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   modalOverlay: {
@@ -1342,5 +1437,22 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     fontSize: 16,
+  },
+
+
+  captionInstructions: {
+    backgroundColor: 'rgba(99,102,241,0.9)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    alignSelf: 'center',
+  },
+  instructionText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 }); 

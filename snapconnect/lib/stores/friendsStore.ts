@@ -7,7 +7,8 @@ export type Friend = {
   email: string;
   username: string;
   name: string | null;
-  status: 'pending' | 'accepted' | 'blocked';
+  avatar_url: string | null;
+  status: 'pending' | 'accepted' | 'blocked' | 'none';
 };
 
 type DatabaseUser = {
@@ -15,6 +16,7 @@ type DatabaseUser = {
   email: string;
   username: string;
   name: string | null;
+  avatar_url: string | null;
 };
 
 type FriendshipResponse = {
@@ -68,8 +70,8 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
           id,
           friend_id,
           user_id,
-          friend:friend_id(id, email, username, name),
-          user:user_id(id, email, username, name),
+          friend:friend_id(id, email, username, name, avatar_url),
+          user:user_id(id, email, username, name, avatar_url),
           status
         `)
         .eq('status', 'accepted')
@@ -83,7 +85,7 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
       console.log('Fetched friendships:', friendships);
 
       // Transform the data to our Friend type
-      const friends = (friendships as unknown as FriendshipResponse[]).map(friendship => {
+              const friends = (friendships as unknown as FriendshipResponse[]).map(friendship => {
         const friend = friendship.user_id === userId
           ? friendship.friend
           : friendship.user;
@@ -92,6 +94,7 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
           email: friend.email,
           username: friend.username,
           name: friend.name,
+          avatar_url: friend.avatar_url,
           status: friendship.status,
         };
       });
@@ -118,7 +121,7 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
         .from('friendships')
         .select(`
           id,
-          user:user_id(id, email, username, name)
+          user:user_id(id, email, username, name, avatar_url)
         `)
         .eq('friend_id', userId)
         .eq('status', 'pending');
@@ -135,6 +138,7 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
         email: request.user.email,
         username: request.user.username,
         name: request.user.name,
+        avatar_url: request.user.avatar_url,
         status: 'pending' as const,
       }));
 
@@ -152,41 +156,82 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
       const userId = session.data.session?.user.id;
       if (!userId) throw new Error('Not authenticated');
 
+      console.log('Sending friend request:', { userId, email });
+
       // First find the user by email
-      const { data: users, error: userError } = await supabase
+      const { data: targetUser, error: userError } = await supabase
         .from('users')
-        .select('id, email, name')
+        .select('id, email, username, name')
         .eq('email', email)
         .single();
 
-      if (userError) throw userError;
-      if (!users) throw new Error('User not found');
+      if (userError) {
+        console.error('Error finding user:', userError);
+        throw new Error('User not found');
+      }
+      if (!targetUser) throw new Error('User not found');
 
-      // Check if friendship already exists
+      console.log('Found target user:', targetUser);
+
+      // Check if trying to add yourself
+      if (targetUser.id === userId) {
+        throw new Error('Cannot send friend request to yourself');
+      }
+
+      // Check if friendship already exists (in either direction)
       const { data: existing, error: checkError } = await supabase
         .from('friendships')
-        .select('id, status')
-        .or(`and(user_id.eq.${userId},friend_id.eq.${users.id}),and(user_id.eq.${users.id},friend_id.eq.${userId})`)
-        .single();
+        .select('id, status, user_id, friend_id')
+        .or(`and(user_id.eq.${userId},friend_id.eq.${targetUser.id}),and(user_id.eq.${targetUser.id},friend_id.eq.${userId})`);
 
-      if (checkError && checkError.code !== 'PGRST116') throw checkError;
-      if (existing) throw new Error('Friendship already exists');
+      if (checkError) {
+        console.error('Error checking existing friendship:', checkError);
+        throw checkError;
+      }
+
+      console.log('Existing friendships:', existing);
+
+      if (existing && existing.length > 0) {
+        const friendship = existing[0];
+        if (friendship.status === 'accepted') {
+          throw new Error('You are already friends with this user');
+        } else if (friendship.status === 'pending') {
+          if (friendship.user_id === userId) {
+            throw new Error('Friend request already sent');
+          } else {
+            throw new Error('This user has already sent you a friend request');
+          }
+        }
+      }
 
       // Send friend request
-      const { error: insertError } = await supabase
+      const { data: newFriendship, error: insertError } = await supabase
         .from('friendships')
         .insert({
           user_id: userId,
-          friend_id: users.id,
+          friend_id: targetUser.id,
           status: 'pending'
-        });
+        })
+        .select()
+        .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Error inserting friendship:', insertError);
+        throw insertError;
+      }
+
+      console.log('Friend request sent successfully:', newFriendship);
 
       set({ isLoading: false });
-      await get().fetchPendingRequests();
+      // Refresh both friends and pending requests
+      await Promise.all([
+        get().fetchFriends(),
+        get().fetchPendingRequests()
+      ]);
     } catch (error: any) {
+      console.error('Failed to send friend request:', error);
       set({ error: error.message, isLoading: false });
+      throw error; // Re-throw so the UI can handle it
     }
   },
 
@@ -293,31 +338,98 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
         currentUserId: userId
       });
 
+      // Get existing friendships to determine relationship status
+      const { data: existingFriendships, error: friendshipError } = await supabase
+        .from('friendships')
+        .select('friend_id, user_id, status')
+        .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
+
+      if (friendshipError) {
+        console.error('Error fetching friendships:', friendshipError);
+      }
+
+      // Create a map of user IDs to their relationship status
+      const relationshipMap = new Map<string, 'accepted' | 'pending-sent' | 'pending-received'>();
+      if (existingFriendships) {
+        existingFriendships.forEach(friendship => {
+          const otherUserId = friendship.user_id === userId ? friendship.friend_id : friendship.user_id;
+          
+          if (friendship.status === 'accepted') {
+            relationshipMap.set(otherUserId, 'accepted');
+          } else if (friendship.status === 'pending') {
+            // Determine if we sent the request or received it
+            if (friendship.user_id === userId) {
+              relationshipMap.set(otherUserId, 'pending-sent'); // We sent the request
+            } else {
+              relationshipMap.set(otherUserId, 'pending-received'); // We received the request
+            }
+          }
+        });
+      }
+
+      console.log('User relationship map:', Object.fromEntries(relationshipMap));
+
+      // Helper function to format results with correct status
+      const formatResults = (users: DatabaseUser[]) => {
+        return users.map(user => {
+          const relationship = relationshipMap.get(user.id);
+          let status: 'pending' | 'accepted' | 'blocked' | 'none';
+          
+          console.log(`Formatting user ${user.username} (${user.id}) with relationship:`, relationship);
+          
+          if (!relationship) {
+            // No relationship exists - show "Add Friend"
+            status = 'none';
+            console.log(`User ${user.username} has no relationship - setting status to 'none' (will show Add Friend)`);
+          } else {
+            switch (relationship) {
+              case 'accepted':
+                status = 'accepted';
+                break;
+              case 'pending-sent':
+                status = 'pending'; // We sent a request, show "Pending"
+                break;
+              case 'pending-received':
+                status = 'blocked'; // They sent us a request, show "Accept Request"
+                break;
+              default:
+                status = 'none'; // Fallback to "Add Friend"
+            }
+          }
+
+          console.log(`Final status for ${user.username}:`, status);
+
+          return {
+            id: user.id,
+            email: user.email,
+            username: user.username,
+            name: user.name,
+            avatar_url: user.avatar_url,
+            status
+          };
+        });
+      };
+
       // First try an exact match
       const { data: exactMatches, error: exactError } = await supabase
         .from('users')
-        .select('id, email, username, name')
+        .select('id, email, username, name, avatar_url')
         .eq('username', searchTerm)
         .neq('id', userId)
-        .limit(5);
+        .limit(10); // Get more results to account for filtering
 
       if (exactError) {
         console.error('Exact match search error:', exactError);
       } else if (exactMatches && exactMatches.length > 0) {
-        console.log('Found exact matches:', exactMatches);
-        return (exactMatches as DatabaseUser[]).map(user => ({
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          name: user.name,
-          status: 'pending' as const
-        }));
+        const filteredResults = formatResults(exactMatches as DatabaseUser[]);
+        console.log('Found exact matches:', filteredResults);
+        return filteredResults.slice(0, 5); // Limit to 5 results
       }
 
       // If no exact matches, try partial matches
       const { data: users, error } = await supabase
         .from('users')
-        .select('id, email, username, name')
+        .select('id, email, username, name, avatar_url')
         .or(
           `username.ilike.${searchTerm}%,` +
           `username.ilike.%${searchTerm}%,` +
@@ -325,56 +437,41 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
           `name.ilike.%${searchTerm}%`
         )
         .neq('id', userId)
-        .limit(5);
+        .limit(10); // Get more results to account for filtering
 
       if (error) {
         console.error('Partial match search error:', error);
         throw error;
       }
 
-      console.log('Search results:', {
-        query: searchTerm,
-        resultsCount: users?.length || 0,
-        results: users
-      });
-
-      if (!users || users.length === 0) {
-        // Try one more time with a very loose match
-        const { data: looseMatches, error: looseError } = await supabase
-          .from('users')
-          .select('id, email, username, name')
-          .or(
-            `username.ilike.%${searchTerm}%,` +
-            `email.ilike.%${searchTerm}%,` +
-            `name.ilike.%${searchTerm}%`
-          )
-          .neq('id', userId)
-          .limit(5);
-
-        if (looseError) {
-          console.error('Loose match search error:', looseError);
-        } else if (looseMatches && looseMatches.length > 0) {
-          console.log('Found loose matches:', looseMatches);
-          return (looseMatches as DatabaseUser[]).map(user => ({
-            id: user.id,
-            email: user.email,
-            username: user.username,
-            name: user.name,
-            status: 'pending' as const
-          }));
-        }
-
-        console.log('No users found for query:', searchTerm);
-        return [];
+      if (users && users.length > 0) {
+        const filteredResults = formatResults(users as DatabaseUser[]);
+        console.log('Found partial matches:', filteredResults);
+        return filteredResults.slice(0, 5); // Limit to 5 results
       }
 
-      return (users as DatabaseUser[]).map(user => ({
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        name: user.name,
-        status: 'pending' as const
-      }));
+      // Try one more time with a very loose match
+      const { data: looseMatches, error: looseError } = await supabase
+        .from('users')
+        .select('id, email, username, name, avatar_url')
+        .or(
+          `username.ilike.%${searchTerm}%,` +
+          `email.ilike.%${searchTerm}%,` +
+          `name.ilike.%${searchTerm}%`
+        )
+        .neq('id', userId)
+        .limit(10); // Get more results to account for filtering
+
+      if (looseError) {
+        console.error('Loose match search error:', looseError);
+      } else if (looseMatches && looseMatches.length > 0) {
+        const filteredResults = formatResults(looseMatches as DatabaseUser[]);
+        console.log('Found loose matches:', filteredResults);
+        return filteredResults.slice(0, 5); // Limit to 5 results
+      }
+
+      console.log('No users found for query after filtering:', searchTerm);
+      return [];
     } catch (error: any) {
       console.error('Search failed:', error);
       set({ error: error.message });

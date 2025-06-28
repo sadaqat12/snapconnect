@@ -197,14 +197,7 @@ export default function AROverlay({
         <View style={[styles.filterOverlay, getFilterStyle(activeFilter.filter)]} />
       )}
       
-      {/* Instructions */}
-      {elements.length === 0 && (
-        <View style={styles.instructionsContainer}>
-          <Text style={styles.instructionsText}>
-            Tap the filters button to add stickers, text, or effects! ✨
-          </Text>
-        </View>
-      )}
+
     </Animated.View>
   );
 }
@@ -302,21 +295,5 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
     zIndex: 5,
   },
-  instructionsContainer: {
-    position: 'absolute',
-    top: '45%',
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    pointerEvents: 'none',
-  },
-  instructionsText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 16,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
+
 }); 

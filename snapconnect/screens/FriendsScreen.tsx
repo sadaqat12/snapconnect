@@ -17,6 +17,7 @@ import { useFriendsStore, Friend } from '../lib/stores/friendsStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SnapService, SnapData } from '../lib/snapService';
 import SnapViewer from '../components/SnapViewer';
+import UserAvatar from '../components/UserAvatar';
 import { supabase } from '../lib/supabase';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
@@ -49,7 +50,9 @@ interface FriendWithActivity extends Friend {
 }
 
 const EmptySearchResults = () => (
-  <Text style={styles.emptyText}>No users found</Text>
+  <Text style={styles.emptyText}>
+    No new users found. They might already be your friend or have a pending request.
+  </Text>
 );
 
 const EmptyFriendsList = () => (
@@ -85,6 +88,9 @@ export default function FriendsScreen() {
   const [selectedFriends, setSelectedFriends] = useState<Friend[]>([]);
   const [groupName, setGroupName] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Add state for group conversations
+  const [groupConversations, setGroupConversations] = useState<Conversation[]>([]);
 
   const realtimeChannel = useRef<any>(null);
 
@@ -179,8 +185,8 @@ export default function FriendsScreen() {
       // Get received snaps
       const receivedSnaps = await SnapService.getReceivedSnaps();
       
-      // Get conversations
-      const { data: conversations, error: convError } = await supabase
+      // Get ALL conversations (both direct and group)
+      const { data: allConversations, error: convError } = await supabase
         .from('conversations')
         .select(`
           *,
@@ -192,8 +198,45 @@ export default function FriendsScreen() {
           )
         `)
         .contains('participants', [user.id])
-        .eq('type', 'direct')
         .order('last_message_at', { ascending: false });
+
+      if (convError) {
+        console.error('Error loading conversations:', convError);
+      }
+
+      // Separate direct and group conversations
+      const directConversations = allConversations?.filter(conv => conv.type === 'direct') || [];
+      const groupConvs = allConversations?.filter(conv => conv.type === 'group') || [];
+      
+      // Process group conversations with participant info
+      const processedGroupConvs = await Promise.all(
+        groupConvs.map(async (conv) => {
+          // Get participant info for group conversations
+          const { data: participantInfo } = await supabase
+            .from('users')
+            .select('id, username, name, avatar_url')
+            .in('id', conv.participants);
+
+          const participantNames = participantInfo
+            ?.filter(p => p.id !== user.id)
+            .map(p => p.name || p.username) || [];
+
+          // Get unread count for this conversation
+          const { data: unreadMessages } = await supabase
+            .from('chat_messages')
+            .select('id')
+            .eq('conversation_id', conv.id)
+            .not('read_by', 'cs', `{${user.id}}`);
+
+          return {
+            ...conv,
+            participant_names: participantNames,
+            unread_count: unreadMessages?.length || 0,
+          };
+        })
+      );
+
+      setGroupConversations(processedGroupConvs);
 
       if (convError) {
         console.error('Error loading conversations:', convError);
@@ -229,9 +272,9 @@ export default function FriendsScreen() {
         }
       });
 
-      // Process conversations
-      if (conversations) {
-        for (const conv of conversations) {
+      // Process direct conversations
+      if (directConversations) {
+        for (const conv of directConversations) {
           const otherParticipant = conv.participants.find((p: string) => p !== user.id);
           const friend = friendsMap.get(otherParticipant);
           
@@ -303,12 +346,16 @@ export default function FriendsScreen() {
 
   const handleSendRequest = async (email: string) => {
     try {
+      console.log('Sending friend request to:', email);
       await sendFriendRequest(email);
       setSearchQuery('');
       setSearchResults([]);
       Alert.alert('Success', 'Friend request sent!');
+      // Refresh the data to update the UI
+      await loadData();
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      console.error('Error sending friend request:', error);
+      Alert.alert('Error', error.message || 'Failed to send friend request');
     }
   };
 
@@ -382,10 +429,22 @@ export default function FriendsScreen() {
       setShowGroupChatModal(false);
       setSelectedFriends([]);
       setGroupName('');
+      
+      // Refresh data to show new group chat
+      await loadData();
     } catch (error) {
       console.error('Error creating group chat:', error);
       Alert.alert('Error', 'Failed to create group chat');
     }
+  };
+
+  const handleGroupChatPress = (conversation: Conversation) => {
+    navigation.navigate('Chat', {
+      conversationId: conversation.id,
+      conversationName: conversation.name || 'Group Chat',
+      participants: conversation.participants,
+      isGroup: true,
+    });
   };
 
   const toggleFriendSelection = (friend: Friend) => {
@@ -467,19 +526,75 @@ export default function FriendsScreen() {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
-  const renderSearchResult = ({ item }: { item: Friend }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => handleSendRequest(item.email)}
-    >
-      <View style={styles.cardContent}>
-        <Text style={styles.name}>{item.name || item.username}</Text>
-        <Text style={styles.username}>@{item.username}</Text>
-        <Text style={styles.email}>{item.email}</Text>
-      </View>
-      <Text style={styles.addButton}>Add Friend</Text>
-    </TouchableOpacity>
-  );
+  const renderSearchResult = ({ item }: { item: Friend }) => {
+    const getButtonConfig = () => {
+      console.log('Rendering search result for user:', item.username, 'with status:', item.status);
+      
+      switch (item.status) {
+        case 'accepted':
+          return { 
+            text: 'Friends', 
+            style: [styles.addButton, { backgroundColor: '#10B981' }], 
+            onPress: () => {}, 
+            disabled: true 
+          };
+        case 'pending':
+          // This means we sent a friend request
+          return { 
+            text: 'Pending', 
+            style: [styles.addButton, { backgroundColor: '#6B7280' }], 
+            onPress: () => {}, 
+            disabled: true 
+          };
+        case 'blocked':
+          // They sent us a friend request - show "Accept Request"
+          return { 
+            text: 'Accept Request', 
+            style: [styles.addButton, { backgroundColor: '#3B82F6' }], 
+            onPress: () => acceptFriendRequest(item.id),
+            disabled: false 
+          };
+        case 'none':
+          // No relationship exists - show "Add Friend"
+          return { 
+            text: 'Add Friend', 
+            style: styles.addButton, 
+            onPress: () => handleSendRequest(item.email),
+            disabled: false 
+          };
+        default:
+          return { 
+            text: 'Add Friend', 
+            style: styles.addButton, 
+            onPress: () => handleSendRequest(item.email),
+            disabled: false 
+          };
+      }
+    };
+
+    const buttonConfig = getButtonConfig();
+
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={buttonConfig.onPress}
+        disabled={buttonConfig.disabled}
+      >
+        <UserAvatar avatarUrl={item.avatar_url} size="medium" style={styles.avatar} />
+        <View style={styles.cardContent}>
+          <Text style={styles.name}>{item.name || item.username}</Text>
+          <Text style={styles.username}>@{item.username}</Text>
+          <Text style={styles.email}>{item.email}</Text>
+        </View>
+        <Text style={[
+          buttonConfig.style,
+          buttonConfig.disabled && { opacity: 0.5 }
+        ]}>
+          {buttonConfig.text}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   const renderFriend = ({ item }: { item: FriendWithActivity }) => {
     const totalActivity = item.unreadSnaps.length + item.unreadMessages;
@@ -491,6 +606,7 @@ export default function FriendsScreen() {
         onPress={() => handleFriendPress(item)}
         onLongPress={() => startDirectChat(item)}
       >
+        <UserAvatar avatarUrl={item.avatar_url} size="medium" style={styles.avatar} />
         <View style={styles.cardContent}>
           <View style={styles.friendHeader}>
             <Text style={styles.name}>{item.name || item.username}</Text>
@@ -528,6 +644,7 @@ export default function FriendsScreen() {
 
   const renderPendingRequest = ({ item }: { item: Friend }) => (
     <View style={styles.card}>
+      <UserAvatar avatarUrl={item.avatar_url} size="medium" style={styles.avatar} />
       <View style={styles.cardContent}>
         <Text style={styles.name}>{item.name || item.username}</Text>
         <Text style={styles.username}>@{item.username}</Text>
@@ -548,6 +665,32 @@ export default function FriendsScreen() {
         </TouchableOpacity>
       </View>
     </View>
+  );
+
+  const renderGroupChat = ({ item }: { item: Conversation }) => (
+    <TouchableOpacity
+      style={[styles.card, item.unread_count > 0 && styles.cardWithActivity]}
+      onPress={() => handleGroupChatPress(item)}
+    >
+      <View style={[styles.avatar, { backgroundColor: '#6366f1', justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={[styles.name, { color: '#ffffff', fontSize: 14 }]}>
+          {item.name ? item.name.substring(0, 2).toUpperCase() : 'GC'}
+        </Text>
+      </View>
+      <View style={styles.cardContent}>
+        <View style={styles.friendHeader}>
+          <Text style={styles.name}>{item.name || 'Group Chat'}</Text>
+          {item.unread_count > 0 && (
+            <View style={styles.activityBadge}>
+              <Text style={styles.activityText}>{item.unread_count}</Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.email}>
+          {item.participant_names.join(', ')} • {item.participants.length} members
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 
   const renderGroupChatModal = () => (
@@ -592,6 +735,7 @@ export default function FriendsScreen() {
                 ]}
                 onPress={() => toggleFriendSelection(item)}
               >
+                <UserAvatar avatarUrl={item.avatar_url} size="small" style={styles.avatar} />
                 <View style={styles.friendInfo}>
                   <Text style={styles.friendName}>{item.name || item.username}</Text>
                   <Text style={styles.friendUsername}>@{item.username}</Text>
@@ -700,6 +844,19 @@ export default function FriendsScreen() {
                   <FlatList
                     data={pendingRequests}
                     renderItem={renderPendingRequest}
+                    keyExtractor={(item) => item.id}
+                    scrollEnabled={false}
+                  />
+                </View>
+              )}
+
+              {/* Group Chats Section */}
+              {groupConversations.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Group Chats</Text>
+                  <FlatList
+                    data={groupConversations}
+                    renderItem={renderGroupChat}
                     keyExtractor={(item) => item.id}
                     scrollEnabled={false}
                   />
@@ -941,6 +1098,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 24,
+  },
+  avatar: {
+    marginRight: 12,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
