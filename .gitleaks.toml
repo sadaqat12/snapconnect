@@ -1,0 +1,79 @@
+# GitLeaks configuration for SnapConnect
+# Prevents secrets from being committed to the repository
+
+[extend]
+# Use the default gitleaks configuration as a base
+useDefault = true
+
+# Additional custom rules specific to SnapConnect
+[[rules]]
+description = "Supabase URL"
+id = "supabase-url"
+regex = '''https://[a-z0-9]+\.supabase\.co'''
+keywords = ["supabase"]
+
+[[rules]]
+description = "Supabase Anon Key"
+id = "supabase-anon-key"
+regex = '''eyJ[A-Za-z0-9_/+-]*\.eyJ[A-Za-z0-9_/+-]*\.[A-Za-z0-9_/+-]*'''
+keywords = ["supabase", "anon", "key"]
+
+[[rules]]
+description = "OpenAI API Key"
+id = "openai-api-key"
+regex = '''sk-[a-zA-Z0-9]{32,}'''
+keywords = ["openai", "api", "key"]
+
+[[rules]]
+description = "Environment variable with sensitive data"
+id = "env-sensitive"
+regex = '''(?i)(EXPO_SUPABASE_URL|EXPO_SUPABASE_ANON_KEY|EXPO_OPENAI_KEY|EXPO_PUBLIC_SUPABASE_URL|EXPO_PUBLIC_SUPABASE_ANON_KEY|EXPO_PUBLIC_OPENAI_KEY|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*[^\s]+'''
+keywords = ["EXPO_", "EXPO_PUBLIC_", "SUPABASE_", "OPENAI_", "API_KEY"]
+
+# Allowlist - paths to ignore during scanning
+[allowlist]
+paths = [
+    # Allow these files to contain example/dummy keys
+    "README.md",
+    "CAPTION_COMPASS_GUIDE.md",
+    "SECURITY_SETUP.md",
+    "todolist.md",
+    "userstories.txt",
+    "prd.txt",
+    
+    # Allow test files with dummy data
+    "test_*.js",
+    "process_*.js",
+    
+    # Allow Supabase configuration files (they contain env variable references)
+    "supabase/config.toml",
+    "supabase/migrations/",
+    
+    # Allow node_modules (dependencies may have examples)
+    "node_modules/",
+    "snapconnect/node_modules/"
+]
+
+# Allowlist for specific strings that are safe
+regexes = [
+    # These are safe example URLs from documentation
+    '''https://zfwrwbtrdcnncyxvfcbd\.supabase\.co''',
+    
+    # Example JWT tokens in documentation (truncated/invalid)
+    '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSI.*\.hiTX0rcrYgo2M168kjcsYy1-vSvlshFL2ljWKDAToZE''',
+    
+    # Supabase config environment variable references (safe)
+    '''= "env\([A-Z_]+\)"''',
+    '''openai_api_key = "env\(OPENAI_API_KEY\)"''',
+    '''auth_token = "env\(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN\)"''',
+    '''secret = "env\(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET\)"'''
+]
+
+# Common words that might trigger false positives in entropy detection
+stopwords = [
+    "example",
+    "test",
+    "dummy",
+    "placeholder",
+    "sample"
+] 
