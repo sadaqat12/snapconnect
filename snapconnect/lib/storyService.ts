@@ -453,7 +453,7 @@ export class StoryService {
 
       console.log(`Current viewers for story ${storyId}:`, story.viewers);
 
-      // Use the new mark_story_viewed function which handles timestamp tracking
+      // Use the completely rewritten mark_story_viewed function
       const { error: updateError } = await supabase.rpc('mark_story_viewed', {
         story_id_param: storyId,
         user_id_param: user.id

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,21 @@ import {
   TextInput,
   StyleSheet,
   Alert,
+  ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+
+const { width: screenWidth } = Dimensions.get('window');
 import { Ionicons } from '@expo/vector-icons';
+import ViewShot from 'react-native-view-shot';
+import * as MediaLibrary from 'expo-media-library';
+import { supabase } from '../lib/supabase';
+import { SnapService } from '../lib/snapService';
+import { StoryService } from '../lib/storyService';
+import { 
+  TripOverviewTemplate, 
+  StoryFormatTemplate 
+} from '../components/ItineraryTemplates';
 
 interface ItineraryItem {
   id: string;
@@ -27,7 +40,40 @@ interface ItineraryDay {
 export default function ItinerarySnapshotScreen() {
   const [itineraryText, setItineraryText] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ItineraryDay[]>([]);
+  const [destination, setDestination] = useState<string | undefined>(undefined);
+  const [year, setYear] = useState<number | undefined>(undefined);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<'overview' | 'story'>('overview');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSharingToStory, setIsSharingToStory] = useState(false);
+  const viewShotRef = useRef<ViewShot>(null);
+
+  const sampleItinerary = `March 15, 2024
+9:00 AM - Flight to Paris (United 123 from JFK Terminal 4)
+8:30 PM - Check into Hotel Le Marais (4 Rue de Braque)
+
+March 16, 2024
+8:00 AM - Breakfast at local café
+10:00 AM - Eiffel Tower visit with elevator to top
+1:00 PM - Lunch at Café de Flore (traditional French bistro)
+3:30 PM - Seine River cruise with audio guide
+7:00 PM - Dinner at Le Comptoir du Relais
+9:30 PM - Evening stroll along Champs-Élysées
+
+March 17, 2024
+9:00 AM - Metro to Louvre Museum
+10:00 AM - Louvre Museum guided tour
+1:00 PM - Lunch at museum café
+3:00 PM - Walk through Tuileries Garden
+5:00 PM - Shopping at Galeries Lafayette
+8:00 PM - Dinner at L'Ami Jean (Basque cuisine)
+
+March 18, 2024
+10:00 AM - Train to Versailles Palace
+11:00 AM - Palace of Versailles tour
+2:00 PM - Lunch at Versailles gardens
+4:00 PM - Return train to Paris
+7:00 PM - Farewell dinner at Le Grand Véfour`;
 
   // Mock parsed itinerary for demonstration
   const mockItinerary: ItineraryDay[] = [
@@ -38,7 +84,7 @@ export default function ItinerarySnapshotScreen() {
           id: '1',
           time: '9:00 AM',
           title: 'Flight to Paris',
-          description: 'Departure from JFK Terminal 4',
+          description: 'United 123 from JFK Terminal 4',
           location: 'New York → Paris',
           type: 'flight',
         },
@@ -46,7 +92,7 @@ export default function ItinerarySnapshotScreen() {
           id: '2',
           time: '8:30 PM',
           title: 'Hotel Check-in',
-          description: 'Hotel Le Marais, Room 304',
+          description: 'Hotel Le Marais, 4 Rue de Brague',
           location: 'Le Marais District',
           type: 'hotel',
         },
@@ -57,14 +103,22 @@ export default function ItinerarySnapshotScreen() {
       items: [
         {
           id: '3',
+          time: '8:00 AM',
+          title: 'Breakfast',
+          description: 'Local café near hotel',
+          location: 'Le Marais District',
+          type: 'restaurant',
+        },
+        {
+          id: '4',
           time: '10:00 AM',
           title: 'Eiffel Tower Visit',
-          description: 'Pre-booked tickets for elevator to top',
+          description: 'Elevator to top with pre-booked tickets',
           location: 'Champ de Mars',
           type: 'activity',
         },
         {
-          id: '4',
+          id: '5',
           time: '1:00 PM',
           title: 'Lunch at Café de Flore',
           description: 'Traditional French bistro experience',
@@ -72,18 +126,136 @@ export default function ItinerarySnapshotScreen() {
           type: 'restaurant',
         },
         {
-          id: '5',
-          time: '3:00 PM',
+          id: '6',
+          time: '3:30 PM',
           title: 'Seine River Cruise',
           description: '2-hour sightseeing cruise with audio guide',
           location: 'Seine River',
           type: 'activity',
         },
+        {
+          id: '7',
+          time: '7:00 PM',
+          title: 'Dinner at Le Comptoir du Relais',
+          description: 'Traditional French cuisine',
+          location: 'Saint-Germain-des-Prés',
+          type: 'restaurant',
+        },
+        {
+          id: '8',
+          time: '9:30 PM',
+          title: 'Evening Stroll',
+          description: 'Walk along Champs-Élysées',
+          location: 'Champs-Élysées',
+          type: 'activity',
+        },
+      ],
+    },
+    {
+      date: 'March 17, 2024',
+      items: [
+        {
+          id: '9',
+          time: '9:00 AM',
+          title: 'Metro to Louvre',
+          description: 'Take metro line 1 to Palais-Royal',
+          location: 'Metro Station',
+          type: 'transport',
+        },
+        {
+          id: '10',
+          time: '10:00 AM',
+          title: 'Louvre Museum Tour',
+          description: 'Guided tour with museum highlights',
+          location: 'Louvre Museum',
+          type: 'activity',
+        },
+        {
+          id: '11',
+          time: '1:00 PM',
+          title: 'Museum Café Lunch',
+          description: 'Light lunch at museum café',
+          location: 'Louvre Museum',
+          type: 'restaurant',
+        },
+        {
+          id: '12',
+          time: '3:00 PM',
+          title: 'Tuileries Garden Walk',
+          description: 'Relaxing walk through historic gardens',
+          location: 'Tuileries Garden',
+          type: 'activity',
+        },
+        {
+          id: '13',
+          time: '5:00 PM',
+          title: 'Shopping at Galeries Lafayette',
+          description: 'French fashion and souvenirs',
+          location: 'Galeries Lafayette',
+          type: 'activity',
+        },
+        {
+          id: '14',
+          time: '8:00 PM',
+          title: 'Dinner at L\'Ami Jean',
+          description: 'Authentic Basque cuisine',
+          location: 'Rue Malar',
+          type: 'restaurant',
+        },
+      ],
+    },
+    {
+      date: 'March 18, 2024',
+      items: [
+        {
+          id: '15',
+          time: '10:00 AM',
+          title: 'Train to Versailles',
+          description: 'RER C train to Versailles Palace',
+          location: 'Gare d\'Austerlitz',
+          type: 'transport',
+        },
+        {
+          id: '16',
+          time: '11:00 AM',
+          title: 'Palace of Versailles Tour',
+          description: 'Guided tour of palace and gardens',
+          location: 'Palace of Versailles',
+          type: 'activity',
+        },
+        {
+          id: '17',
+          time: '2:00 PM',
+          title: 'Lunch at Versailles',
+          description: 'Garden restaurant with palace views',
+          location: 'Versailles Gardens',
+          type: 'restaurant',
+        },
+        {
+          id: '18',
+          time: '4:00 PM',
+          title: 'Return Train to Paris',
+          description: 'RER C back to central Paris',
+          location: 'Versailles Station',
+          type: 'transport',
+        },
+        {
+          id: '19',
+          time: '7:00 PM',
+          title: 'Farewell Dinner',
+          description: 'Michelin-starred farewell dinner',
+          location: 'Le Grand Véfour',
+          type: 'restaurant',
+        },
       ],
     },
   ];
 
-  const processItinerary = () => {
+  const loadSampleItinerary = () => {
+    setItineraryText(sampleItinerary);
+  };
+
+  const processItinerary = async () => {
     if (!itineraryText.trim()) {
       Alert.alert('Error', 'Please enter your itinerary details');
       return;
@@ -91,19 +263,151 @@ export default function ItinerarySnapshotScreen() {
 
     setIsProcessing(true);
     
-    // Simulate AI processing
-    setTimeout(() => {
+    try {
+      console.log('🔄 Processing itinerary with AI...');
+      
+      // Call the AI-powered itinerary parser Edge Function
+      const { data, error } = await supabase.functions.invoke('itinerary-parser', {
+        body: {
+          itineraryText: itineraryText.trim(),
+        },
+      });
+
+      if (error) {
+        console.error('Edge Function error:', error);
+        throw error;
+      }
+
+      if (data.success && data.itinerary && data.itinerary.length > 0) {
+        console.log('✅ Successfully parsed itinerary:', data.itinerary);
+        console.log('✅ AI extracted metadata:', { destination: data.destination, year: data.year });
+        setParsedItinerary(data.itinerary);
+        setDestination(data.destination);
+        setYear(data.year);
+        const successMessage = `Your itinerary has been processed! Found ${data.itinerary.length} days with activities.`;
+        const metadataInfo = [];
+        if (data.destination) metadataInfo.push(`Destination: ${data.destination}`);
+        if (data.year) metadataInfo.push(`Year: ${data.year}`);
+        
+        Alert.alert('Success', metadataInfo.length > 0 
+          ? `${successMessage}\n\n${metadataInfo.join(', ')}`
+          : successMessage
+        );
+      } else {
+        console.error('Invalid response from Edge Function:', data);
+        throw new Error(data.error || 'No itinerary data returned');
+      }
+    } catch (error) {
+      console.error('Error processing itinerary:', error);
+      
+      // Fallback to mock data if AI processing fails
+      console.log('🔄 Using fallback mock data...');
       setParsedItinerary(mockItinerary);
+      setDestination('Paris'); // Set mock destination for sample data
+      setYear(2024); // Set mock year for sample data (since mock data has 2024 dates)
+      Alert.alert(
+        'Processing Notice', 
+        'AI processing encountered an issue, but we\'ve loaded a sample itinerary for you to try the visual snapshots.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } finally {
       setIsProcessing(false);
-      Alert.alert('Success', 'Your itinerary has been processed! You can now generate a visual snapshot.');
-    }, 2000);
+    }
   };
 
-  const generateSnapshot = () => {
-    Alert.alert(
-      'Feature Coming Soon',
-      'The visual snapshot generation feature will be available in the next update. It will create beautiful, shareable graphics of your itinerary.'
-    );
+  const generateSnapshot = async () => {
+    if (!parsedItinerary.length) {
+      Alert.alert('Error', 'Please process your itinerary first');
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera roll access is required to save the snapshot');
+        setIsGenerating(false);
+        return;
+      }
+
+      // Capture the view as an image
+      const uri = await viewShotRef.current?.capture?.();
+      if (!uri) {
+        throw new Error('Failed to capture snapshot');
+      }
+
+      // Save to camera roll
+      await MediaLibrary.saveToLibraryAsync(uri);
+      
+      Alert.alert(
+        'Success!', 
+        'Your itinerary snapshot has been saved to your camera roll!',
+        [
+          { text: 'OK', style: 'default' }
+        ]
+      );
+    } catch (error) {
+      console.error('Error generating snapshot:', error);
+      Alert.alert('Error', 'Failed to generate snapshot. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const shareToStory = async () => {
+    if (!parsedItinerary.length) {
+      Alert.alert('Error', 'Please process your itinerary first');
+      return;
+    }
+
+    if (selectedTemplate !== 'story') {
+      Alert.alert('Story Format Required', 'Please select the "Story Format" template to share to your story.');
+      return;
+    }
+
+    setIsSharingToStory(true);
+
+    try {
+      // Capture the view as an image
+      const uri = await viewShotRef.current?.capture?.();
+      if (!uri) {
+        throw new Error('Failed to capture snapshot');
+      }
+
+      // Create a snap from the captured image
+      const snap = await SnapService.createSnapFromMedia(
+        uri,
+        'photo',
+        {
+          caption: '✈️ My Travel Itinerary\n\nGenerated with SnapConnect',
+          includeLocation: false,
+          duration: 10,
+          recipients: [], // Stories don't have direct recipients
+        },
+        (stage, progress) => {
+          console.log(`Story upload progress: ${stage}`);
+        }
+      );
+
+      // Add snap to story
+      const story = await StoryService.addSnapToStory(snap.id!);
+
+      Alert.alert(
+        'Added to Story!',
+        'Your travel itinerary has been shared to your story and will be visible to friends for 24 hours.',
+        [
+          { text: 'View Story', style: 'default' },
+          { text: 'Great!', style: 'cancel' }
+        ]
+      );
+    } catch (error) {
+      console.error('Error sharing to story:', error);
+      Alert.alert('Error', 'Failed to share to story. Please try again.');
+    } finally {
+      setIsSharingToStory(false);
+    }
   };
 
   const getTypeIcon = (type: string) => {
@@ -171,19 +475,45 @@ export default function ItinerarySnapshotScreen() {
 
       {/* Input Section */}
       <View style={styles.inputSection}>
-        <Text style={styles.sectionTitle}>Enter Your Itinerary</Text>
+        <View style={styles.inputHeader}>
+          <Text style={styles.sectionTitle}>Enter Your Itinerary</Text>
+          <Pressable style={styles.sampleButton} onPress={loadSampleItinerary}>
+            <Ionicons name="document-text" size={16} color="#6366f1" />
+            <Text style={styles.sampleButtonText}>Load Sample</Text>
+          </Pressable>
+        </View>
         <TextInput
           style={styles.textInput}
           value={itineraryText}
           onChangeText={setItineraryText}
-          placeholder="Paste your travel itinerary here... 
+          placeholder="Paste your travel itinerary here or try this sample:
 
-Example:
-March 15 - Flight to Paris at 9:00 AM from JFK
-8:30 PM - Check into Hotel Le Marais
+March 15, 2024
+9:00 AM - Flight to Paris (United 123 from JFK Terminal 4)
+8:30 PM - Check into Hotel Le Marais (4 Rue de Braque)
 
-March 16 - 10:00 AM Eiffel Tower visit
-1:00 PM Lunch at Café de Flore..."
+March 16, 2024
+8:00 AM - Breakfast at local café
+10:00 AM - Eiffel Tower visit with elevator to top
+1:00 PM - Lunch at Café de Flore (traditional French bistro)
+3:30 PM - Seine River cruise with audio guide
+7:00 PM - Dinner at Le Comptoir du Relais
+9:30 PM - Evening stroll along Champs-Élysées
+
+March 17, 2024
+9:00 AM - Metro to Louvre Museum
+10:00 AM - Louvre Museum guided tour
+1:00 PM - Lunch at museum café
+3:00 PM - Walk through Tuileries Garden
+5:00 PM - Shopping at Galeries Lafayette
+8:00 PM - Dinner at L'Ami Jean (Basque cuisine)
+
+March 18, 2024
+10:00 AM - Train to Versailles Palace
+11:00 AM - Palace of Versailles tour
+2:00 PM - Lunch at Versailles gardens
+4:00 PM - Return train to Paris
+7:00 PM - Farewell dinner at Le Grand Véfour"
           placeholderTextColor="#6B7280"
           multiline
           numberOfLines={8}
@@ -198,68 +528,138 @@ March 16 - 10:00 AM Eiffel Tower visit
           {isProcessing ? (
             <>
               <Ionicons name="refresh" size={20} color="#ffffff" />
-              <Text style={styles.processButtonText}>Processing...</Text>
+              <Text style={styles.processButtonText}>AI Processing...</Text>
             </>
           ) : (
             <>
               <Ionicons name="analytics" size={20} color="#ffffff" />
-              <Text style={styles.processButtonText}>Process Itinerary</Text>
+              <Text style={styles.processButtonText}>Process with AI</Text>
             </>
           )}
         </Pressable>
       </View>
 
-      {/* Parsed Itinerary Display */}
+      {/* Parsed Itinerary Display }
       {parsedItinerary.length > 0 && (
         <View style={styles.resultSection}>
           <View style={styles.resultHeader}>
-            <Text style={styles.sectionTitle}>Your Itinerary</Text>
-            <Pressable style={styles.generateButton} onPress={generateSnapshot}>
-              <Ionicons name="image" size={18} color="#ffffff" />
-              <Text style={styles.generateButtonText}>Generate Visual</Text>
-            </Pressable>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Your Itinerary</Text>
           </View>
           
           <View style={styles.itineraryContainer}>
             {parsedItinerary.map(renderItineraryDay)}
           </View>
         </View>
-      )}
+      )}*/}
 
-      {/* Template Examples */}
+      {/* Template Selection */}
       <View style={styles.templatesSection}>
-        <Text style={styles.sectionTitle}>Example Templates</Text>
+        <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>Choose Template Style</Text>
         <View style={styles.templatesGrid}>
-          <Pressable style={styles.templateCard}>
+          <Pressable 
+            style={[
+              styles.templateCard,
+              selectedTemplate === 'overview' && styles.templateCardSelected
+            ]}
+            onPress={() => setSelectedTemplate('overview')}
+          >
             <Ionicons name="map" size={32} color="#6366f1" />
             <Text style={styles.templateTitle}>Trip Overview</Text>
             <Text style={styles.templateDescription}>Perfect for sharing your full journey</Text>
+            {selectedTemplate === 'overview' && (
+              <View style={styles.selectedBadge}>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+              </View>
+            )}
           </Pressable>
           
-          <Pressable style={styles.templateCard}>
-            <Ionicons name="calendar" size={32} color="#10B981" />
-            <Text style={styles.templateTitle}>Daily Schedule</Text>
-            <Text style={styles.templateDescription}>Detailed day-by-day breakdown</Text>
-          </Pressable>
-          
-          <Pressable style={styles.templateCard}>
+
+          <Pressable 
+            style={[
+              styles.templateCard,
+              selectedTemplate === 'story' && styles.templateCardSelected
+            ]}
+            onPress={() => setSelectedTemplate('story')}
+          >
             <Ionicons name="images" size={32} color="#F59E0B" />
             <Text style={styles.templateTitle}>Story Format</Text>
-            <Text style={styles.templateDescription}>Instagram-friendly story cards</Text>
+            <Text style={styles.templateDescription}>Story friendly cards</Text>
+            {selectedTemplate === 'story' && (
+              <View style={styles.selectedBadge}>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+              </View>
+            )}
           </Pressable>
         </View>
       </View>
 
-      {/* Coming Soon Notice */}
-      <View style={styles.comingSoonContainer}>
-        <View style={styles.comingSoonCard}>
-          <Ionicons name="construct" size={32} color="#EF4444" />
-          <Text style={styles.comingSoonTitle}>Feature In Development!</Text>
-          <Text style={styles.comingSoonText}>
-            This feature will use AI to parse your travel plans and generate beautiful, shareable visual snapshots for your social media and trip planning.
-          </Text>
+      {/* Template Preview (Hidden ViewShot) */}
+      {parsedItinerary.length > 0 && (
+        <View style={styles.previewContainer}>
+          <View style={styles.previewHeader}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Preview</Text>
+            <View style={styles.buttonRow}>
+              <Pressable 
+                style={[styles.generateButton, isGenerating && styles.generateButtonDisabled]} 
+                onPress={generateSnapshot}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Ionicons name="download" size={20} color="#ffffff" />
+                )}
+              </Pressable>
+              
+              {selectedTemplate === 'story' && (
+                <Pressable 
+                  style={[styles.storyButton, isSharingToStory && styles.storyButtonDisabled]} 
+                  onPress={shareToStory}
+                  disabled={isSharingToStory}
+                >
+                  {isSharingToStory ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="share" size={16} color="#ffffff" />
+                      <Text style={styles.storyButtonText}>Share</Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
+            </View>
+          </View>
+          
+          <ViewShot 
+            ref={viewShotRef}
+            options={{ 
+              format: "jpg", 
+              quality: 0.9,
+              result: "tmpfile"
+            }}
+            style={styles.viewShotContainer}
+          >
+            {selectedTemplate === 'overview' && (
+              <TripOverviewTemplate 
+                itinerary={parsedItinerary} 
+                templateType="overview"
+                destination={destination}
+                year={year}
+              />
+            )}
+            {selectedTemplate === 'story' && (
+              <StoryFormatTemplate 
+                itinerary={parsedItinerary} 
+                templateType="story"
+                destination={destination}
+                year={year}
+              />
+            )}
+          </ViewShot>
         </View>
-      </View>
+      )}
+
+      
     </ScrollView>
   );
 }
@@ -288,11 +688,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 32,
   },
+  inputHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
-    marginBottom: 16,
+    marginBottom: 0,
+  },
+  sampleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+  },
+  sampleButtonText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '500',
   },
   textInput: {
     backgroundColor: '#1a1a2e',
@@ -334,18 +754,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   generateButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#10B981',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12,
-    gap: 6,
+    borderRadius: 8,
+    minWidth: 44,
+    height: 36,
+  },
+  generateButtonDisabled: {
+    backgroundColor: '#4B5563',
   },
   generateButtonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  storyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+    height: 36,
+  },
+  storyButtonDisabled: {
+    backgroundColor: '#4B5563',
+  },
+  storyButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '600',
   },
   itineraryContainer: {
@@ -434,6 +882,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#333333',
+    position: 'relative',
+  },
+  templateCardSelected: {
+    borderColor: '#10B981',
+    borderWidth: 2,
+  },
+  selectedBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
   },
   templateTitle: {
     fontSize: 16,
@@ -448,29 +906,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  comingSoonContainer: {
+  previewContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  comingSoonCard: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 16,
-    padding: 20,
+    marginBottom: 32,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
-  comingSoonTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#EF4444',
-    marginTop: 12,
-    marginBottom: 8,
+  previewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%',
   },
-  comingSoonText: {
-    fontSize: 14,
-    color: '#EF4444',
-    textAlign: 'center',
-    lineHeight: 20,
+  viewShotContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    backgroundColor: 'transparent',
+    maxWidth: screenWidth * 0.65, // Much smaller to ensure story compatibility
+    alignSelf: 'center',
   },
 }); 

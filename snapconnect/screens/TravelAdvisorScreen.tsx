@@ -81,11 +81,6 @@ export default function TravelAdvisorScreen() {
       if (data.success && data.response) {
         responseText = data.response;
         
-        // Show knowledge base usage if available
-        if (data.knowledge_base_results > 0) {
-          responseText += `\n\n📚 *Enhanced with ${data.knowledge_base_results} sources from my travel knowledge base*`;
-        }
-        
         console.log('Received RAG travel advice:', responseText);
         console.log('Knowledge base results:', data.knowledge_base_results);
       } else {
@@ -237,15 +232,7 @@ export default function TravelAdvisorScreen() {
         </Pressable>
       </View>
 
-      {/* Help Section */}
-      <View style={styles.helpContainer}>
-        <View style={styles.helpCard}>
-          <Ionicons name="information-circle" size={16} color="#6366f1" />
-          <Text style={styles.helpText}>
-            Ask me anything about travel! I have knowledge about flights, hotels, credit card points, and travel hacks.
-          </Text>
-        </View>
-      </View>
+
     </KeyboardAvoidingView>
   );
 }
@@ -389,23 +376,5 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#374151',
-  },
-  helpContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  helpCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 8,
-  },
-  helpText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#6366f1',
-    lineHeight: 16,
   },
 }); 

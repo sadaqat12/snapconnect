@@ -1,104 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-interface CultureTip {
-  id: string;
-  category: 'etiquette' | 'customs' | 'language' | 'dining';
-  title: string;
-  description: string;
-  importance: 'high' | 'medium' | 'low';
-}
-
-interface CuisineDish {
-  id: string;
-  name: string;
-  description: string;
-  category: 'main' | 'appetizer' | 'dessert' | 'drink';
-  spiceLevel: number;
-  mustTry: boolean;
-  price: string;
-}
+import { 
+  CultureCuisineService, 
+  CultureTip, 
+  CuisineDish, 
+  CultureCuisineResponse 
+} from '../lib/cultureCuisineService';
 
 export default function CultureCuisineScreen() {
   const [activeTab, setActiveTab] = useState<'culture' | 'cuisine'>('culture');
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [response, setResponse] = useState<CultureCuisineResponse | null>(null);
+  // Load initial recommendations on mount
+  useEffect(() => {
+    if (!hasLoadedOnce) {
+      loadRecommendations('both');
+      setHasLoadedOnce(true);
+    }
+  }, [hasLoadedOnce]);
 
-  // Mock data - in real implementation, this would come from AI/RAG system
-  const cultureTips: CultureTip[] = [
-    {
-      id: '1',
-      category: 'etiquette',
-      title: 'Greeting Customs',
-      description: 'Always greet with a firm handshake and maintain eye contact. Remove your hat when entering buildings.',
-      importance: 'high',
-    },
-    {
-      id: '2',
-      category: 'dining',
-      title: 'Dining Etiquette',
-      description: 'Wait for the host to begin eating. Keep your hands visible on the table and avoid pointing with utensils.',
-      importance: 'high',
-    },
-    {
-      id: '3',
-      category: 'customs',
-      title: 'Tipping Culture',
-      description: '15-20% is standard at restaurants. Tip taxi drivers 10-15% and hotel staff $1-2 per service.',
-      importance: 'medium',
-    },
-    {
-      id: '4',
-      category: 'language',
-      title: 'Useful Phrases',
-      description: 'Learn "Please", "Thank you", "Excuse me", and "Do you speak English?" in the local language.',
-      importance: 'medium',
-    },
-  ];
+  const loadRecommendations = async (analysisType: 'culture' | 'cuisine' | 'both') => {
+    setIsLoading(true);
+    try {
+      console.log('🎭 Loading recommendations for:', analysisType);
+      const result = await CultureCuisineService.getCultureCuisineRecommendations({
+        analysisType,
+      });
+      setResponse(result);
+    } catch (error) {
+      console.error('Error loading recommendations:', error);
+      Alert.alert('Error', 'Failed to load recommendations. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const cuisineDishes: CuisineDish[] = [
-    {
-      id: '1',
-      name: 'Signature Local Pasta',
-      description: 'Traditional handmade pasta with local herbs and cheese, served with seasonal vegetables',
-      category: 'main',
-      spiceLevel: 2,
-      mustTry: true,
-      price: '$18-24',
-    },
-    {
-      id: '2',
-      name: 'Regional Street Food',
-      description: 'Popular local street snack with unique spices and fresh ingredients',
-      category: 'appetizer',
-      spiceLevel: 4,
-      mustTry: true,
-      price: '$5-8',
-    },
-    {
-      id: '3',
-      name: 'Traditional Dessert',
-      description: 'Sweet local dessert made with honey, nuts, and seasonal fruits',
-      category: 'dessert',
-      spiceLevel: 0,
-      mustTry: false,
-      price: '$6-10',
-    },
-    {
-      id: '4',
-      name: 'Local Specialty Drink',
-      description: 'Refreshing traditional beverage perfect for the local climate',
-      category: 'drink',
-      spiceLevel: 1,
-      mustTry: true,
-      price: '$4-7',
-    },
-  ];
+  const handleTabChange = (tab: 'culture' | 'cuisine') => {
+    setActiveTab(tab);
+    if (response && response.analysisType !== 'both') {
+      // If we don't have data for this tab, load it
+      if ((tab === 'culture' && !response.cultureTips) || 
+          (tab === 'cuisine' && !response.cuisineDishes)) {
+        loadRecommendations(tab);
+      }
+    }
+  };
+
+
+
+  const handleRefresh = () => {
+    loadRecommendations(activeTab === 'culture' ? 'culture' : activeTab === 'cuisine' ? 'cuisine' : 'both');
+  };
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -106,10 +68,12 @@ export default function CultureCuisineScreen() {
       case 'customs': return '🏛️';
       case 'language': return '💬';
       case 'dining': return '🍽️';
+      case 'traditions': return '🎭';
       case 'main': return '🍝';
       case 'appetizer': return '🥗';
       case 'dessert': return '🍰';
       case 'drink': return '🥤';
+      case 'snack': return '🍿';
       default: return '📍';
     }
   };
@@ -153,6 +117,9 @@ export default function CultureCuisineScreen() {
         </View>
       </View>
       <Text style={styles.tipDescription}>{tip.description}</Text>
+      {tip.context && (
+        <Text style={styles.tipContext}>📍 {tip.context}</Text>
+      )}
     </View>
   );
 
@@ -182,6 +149,24 @@ export default function CultureCuisineScreen() {
           {renderSpiceLevel(dish.spiceLevel)}
         </View>
       </View>
+
+      {dish.culturalSignificance && (
+        <Text style={styles.culturalSignificance}>
+          🏛️ Cultural Note: {dish.culturalSignificance}
+        </Text>
+      )}
+
+      {dish.ingredients && dish.ingredients.length > 0 && (
+        <Text style={styles.ingredients}>
+          🥘 Key Ingredients: {dish.ingredients.join(', ')}
+        </Text>
+      )}
+
+      {dish.allergens && dish.allergens.length > 0 && (
+        <Text style={styles.allergens}>
+          ⚠️ Contains: {dish.allergens.join(', ')}
+        </Text>
+      )}
     </View>
   );
 
@@ -190,14 +175,24 @@ export default function CultureCuisineScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Culture & Cuisine Coach</Text>
-        <Text style={styles.subtitle}>Learn local customs and discover authentic flavors</Text>
+        <Text style={styles.subtitle}>
+          {response?.location ? `Insights for ${response.location}` : 'Location-based cultural and culinary insights'}
+        </Text>
+      </View>
+
+      {/* Action Buttons */}
+      <View style={styles.actionContainer}>
+        <Pressable style={styles.actionButton} onPress={handleRefresh}>
+          <Ionicons name="refresh" size={20} color="#6366f1" />
+          <Text style={styles.actionButtonText}>Refresh Recommendations</Text>
+        </Pressable>
       </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <Pressable
           style={[styles.tab, activeTab === 'culture' && styles.activeTab]}
-          onPress={() => setActiveTab('culture')}
+          onPress={() => handleTabChange('culture')}
         >
           <Ionicons 
             name="people" 
@@ -210,7 +205,7 @@ export default function CultureCuisineScreen() {
         </Pressable>
         <Pressable
           style={[styles.tab, activeTab === 'cuisine' && styles.activeTab]}
-          onPress={() => setActiveTab('cuisine')}
+          onPress={() => handleTabChange('cuisine')}
         >
           <Ionicons 
             name="restaurant" 
@@ -223,34 +218,69 @@ export default function CultureCuisineScreen() {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.content}>
-        {activeTab === 'culture' ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cultural Tips & Etiquette</Text>
-            <View style={styles.tipsContainer}>
-              {cultureTips.map(renderCultureTip)}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Must-Try Local Dishes</Text>
-            <View style={styles.dishesContainer}>
-              {cuisineDishes.map(renderCuisineDish)}
-            </View>
-          </View>
-        )}
-
-        {/* Coming Soon Notice */}
-        <View style={styles.comingSoonContainer}>
-          <View style={styles.comingSoonCard}>
-            <Ionicons name="construct" size={32} color="#F59E0B" />
-            <Text style={styles.comingSoonTitle}>Feature Coming Soon!</Text>
-            <Text style={styles.comingSoonText}>
-              This feature will use AI to analyze your location and photos to provide personalized cultural insights and food recommendations.
-            </Text>
-          </View>
+      {/* Loading State */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Getting local insights...</Text>
+          <Text style={styles.loadingSubtext}>
+            AI is discovering local cultural tips and cuisine recommendations
+          </Text>
         </View>
-      </ScrollView>
+      )}
+
+      {/* Content */}
+      {!isLoading && response && (
+        <ScrollView style={styles.content}>
+          {/* AI Analysis Results */}
+          {response.imageAnalysis && (
+            <View style={styles.analysisSection}>
+              <Text style={styles.analysisSectionTitle}>🤖 AI Image Analysis</Text>
+              <Text style={styles.analysisText}>{response.imageAnalysis}</Text>
+            </View>
+          )}
+
+          {/* Personalized Recommendations */}
+          {response.recommendations && (
+            <View style={styles.recommendationsSection}>
+              <Text style={styles.recommendationsSectionTitle}>💡 Personalized Recommendations</Text>
+              <Text style={styles.recommendationsText}>{response.recommendations}</Text>
+            </View>
+          )}
+
+          {/* Culture Tips */}
+          {activeTab === 'culture' && response.cultureTips && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Cultural Tips & Etiquette</Text>
+              <View style={styles.tipsContainer}>
+                {response.cultureTips.map(renderCultureTip)}
+              </View>
+            </View>
+          )}
+
+          {/* Cuisine Recommendations */}
+          {activeTab === 'cuisine' && response.cuisineDishes && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Must-Try Local Dishes</Text>
+              <View style={styles.dishesContainer}>
+                {response.cuisineDishes.map(renderCuisineDish)}
+              </View>
+            </View>
+          )}
+
+          {/* Error State */}
+          {!response.success && response.error && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="warning-outline" size={32} color="#EF4444" />
+              <Text style={styles.errorTitle}>Service Temporarily Unavailable</Text>
+              <Text style={styles.errorText}>{response.error}</Text>
+              <Pressable style={styles.retryButton} onPress={handleRefresh}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -274,6 +304,26 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#9CA3AF',
+  },
+  actionContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    gap: 8,
+  },
+  actionButtonText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -304,8 +354,66 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#6366f1',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#ffffff',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
+  },
   content: {
     flex: 1,
+  },
+  analysisSection: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  analysisSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#6366f1',
+    marginBottom: 8,
+  },
+  analysisText: {
+    fontSize: 14,
+    color: '#E5E7EB',
+    lineHeight: 20,
+  },
+  recommendationsSection: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: 'rgba(245, 158, 11, 0.05)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  recommendationsSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 8,
+  },
+  recommendationsText: {
+    fontSize: 14,
+    color: '#E5E7EB',
+    lineHeight: 20,
   },
   section: {
     paddingHorizontal: 20,
@@ -364,6 +472,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#E5E7EB',
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  tipContext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
   },
   dishesContainer: {
     gap: 12,
@@ -424,6 +538,7 @@ const styles = StyleSheet.create({
   dishMeta: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
   spiceLevelContainer: {
     flexDirection: 'row',
@@ -438,29 +553,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
   },
-  comingSoonContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
+  culturalSignificance: {
+    fontSize: 12,
+    color: '#F59E0B',
+    lineHeight: 16,
+    marginBottom: 6,
   },
-  comingSoonCard: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 16,
-    padding: 20,
+  ingredients: {
+    fontSize: 12,
+    color: '#10B981',
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  allergens: {
+    fontSize: 12,
+    color: '#EF4444',
+    lineHeight: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.2)',
+    paddingHorizontal: 40,
   },
-  comingSoonTitle: {
+  errorTitle: {
     fontSize: 18,
+    color: '#EF4444',
+    marginTop: 16,
+    textAlign: 'center',
     fontWeight: 'bold',
-    color: '#F59E0B',
-    marginTop: 12,
-    marginBottom: 8,
   },
-  comingSoonText: {
+  errorText: {
     fontSize: 14,
-    color: '#F59E0B',
+    color: '#9CA3AF',
+    marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

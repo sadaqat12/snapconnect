@@ -28,6 +28,7 @@ export default function LocalInsightsScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [insights, setInsights] = useState<LocationInsight[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [locationName, setLocationName] = useState<string>('');
 
   useEffect(() => {
@@ -62,6 +63,12 @@ export default function LocalInsightsScreen() {
       console.error('Error getting location:', error);
       Alert.alert('Error', 'Could not get your location');
     }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await getCurrentLocation();
+    setIsRefreshing(false);
   };
 
   const loadLocalInsights = async (userLocation: Location.LocationObject) => {
@@ -193,8 +200,8 @@ export default function LocalInsightsScreen() {
       style={styles.container}
       refreshControl={
         <RefreshControl
-          refreshing={isLoadingInsights}
-          onRefresh={getCurrentLocation}
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
           tintColor="#6366f1"
         />
       }
@@ -209,7 +216,7 @@ export default function LocalInsightsScreen() {
 
       {/* Refresh Button */}
       <View style={styles.actionContainer}>
-        <Pressable onPress={getCurrentLocation} style={styles.refreshButton}>
+        <Pressable onPress={handleRefresh} style={styles.refreshButton}>
           <Ionicons name="refresh" size={18} color="#6366f1" />
           <Text style={styles.refreshText}>Update Location</Text>
         </Pressable>
