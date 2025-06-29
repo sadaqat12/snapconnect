@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   Dimensions,
+  Pressable,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -22,24 +23,30 @@ interface AROverlayProps {
   onUpdateElement: (id: string, updates: Partial<ARElement>) => void;
   onDeleteElement: (id: string) => void;
   activeFilter?: { filter: string | null };
+  selectedElementId?: string | null;
+  onElementSelect?: (id: string | null) => void;
+  onClearSelection?: () => void;
 }
 
 interface DraggableElementProps {
   element: ARElement;
   onUpdate: (updates: Partial<ARElement>) => void;
   onDelete: () => void;
+  isSelected: boolean;
+  onSelect: () => void;
 }
 
 const DraggableElement: React.FC<DraggableElementProps> = ({ 
   element, 
   onUpdate, 
-  onDelete 
+  onDelete,
+  isSelected,
+  onSelect
 }) => {
   const translateX = useSharedValue(element.x * screenWidth);
   const translateY = useSharedValue(element.y * screenHeight);
   const scale = useSharedValue(element.scale || 1);
   const rotation = useSharedValue(element.rotation || 0);
-  const [isSelected, setIsSelected] = useState(false);
 
   // Double tap gesture for deletion
   const doubleTapGesture = Gesture.Tap()
@@ -50,6 +57,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   // Pan gesture for moving elements
   const panGesture = Gesture.Pan()
+    .onStart(() => {
+      runOnJS(onSelect)();
+    })
     .onUpdate((event) => {
       translateX.value = event.translationX + element.x * screenWidth;
       translateY.value = event.translationY + element.y * screenHeight;
@@ -67,6 +77,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   // Pinch gesture for scaling
   const pinchGesture = Gesture.Pinch()
+    .onStart(() => {
+      runOnJS(onSelect)();
+    })
     .onUpdate((event) => {
       scale.value = Math.max(0.5, Math.min(3, event.scale * (element.scale || 1)));
     })
@@ -76,6 +89,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   // Rotation gesture
   const rotationGesture = Gesture.Rotation()
+    .onStart(() => {
+      runOnJS(onSelect)();
+    })
     .onUpdate((event) => {
       rotation.value = event.rotation + (element.rotation || 0);
     })
@@ -83,9 +99,18 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       runOnJS(onUpdate)({ rotation: rotation.value });
     });
 
-  // Combined gesture with double tap
+  // Simple tap gesture for selection - wait for double tap to fail first
+  const tapGesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .requireExternalGestureToFail(doubleTapGesture)
+    .onEnd(() => {
+      runOnJS(onSelect)();
+    });
+
+  // Combined gesture with double tap prioritized
   const composedGesture = Gesture.Race(
     doubleTapGesture,
+    tapGesture,
     Gesture.Simultaneous(
       panGesture,
       Gesture.Simultaneous(pinchGesture, rotationGesture)
@@ -104,7 +129,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   });
 
   const handleLongPress = () => {
-    setIsSelected(!isSelected);
+    onSelect();
   };
 
   const handleDoublePress = () => {
@@ -145,8 +170,6 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
           animatedStyle,
           isSelected && styles.selectedElement
         ]}
-        onTouchStart={() => setIsSelected(true)}
-        onTouchEnd={() => setTimeout(() => setIsSelected(false), 2000)}
       >
         {renderContent()}
         
@@ -168,7 +191,10 @@ export default function AROverlay({
   elements, 
   onUpdateElement, 
   onDeleteElement, 
-  activeFilter 
+  activeFilter,
+  selectedElementId,
+  onElementSelect,
+  onClearSelection
 }: AROverlayProps) {
   const overlayStyle = useAnimatedStyle(() => {
     if (activeFilter?.filter) {
@@ -189,6 +215,8 @@ export default function AROverlay({
           element={element}
           onUpdate={(updates) => onUpdateElement(element.id, updates)}
           onDelete={() => onDeleteElement(element.id)}
+          isSelected={selectedElementId === element.id}
+          onSelect={() => onElementSelect?.(element.id)}
         />
       ))}
       
@@ -227,6 +255,10 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
+  },
+  backgroundTouchable: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
   },
   draggableElement: {
     position: 'absolute',
