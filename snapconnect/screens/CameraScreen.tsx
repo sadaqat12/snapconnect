@@ -43,6 +43,7 @@ export default function CameraScreen() {
   const [showARPanel, setShowARPanel] = useState(false);
   const [arElements, setArElements] = useState<ARElement[]>([]);
   const [activeFilter, setActiveFilter] = useState<ARFilter | null>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   
   // Caption Helper state
   const [showCaptionHelper, setShowCaptionHelper] = useState(false);
@@ -537,6 +538,11 @@ export default function CameraScreen() {
   const clearAllARElements = () => {
     setArElements([]);
     setActiveFilter(null);
+    setSelectedElementId(null);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedElementId(null);
   };
 
   const handleShowCaptionHelper = async () => {
@@ -723,18 +729,20 @@ export default function CameraScreen() {
               quality: 0.9,
             }}
           >
-            {capturedMediaType === 'video' ? (
-              <Video
-                source={{ uri: capturedMedia }}
-                style={styles.previewImage}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={true}
-                isLooping={true}
-                useNativeControls={false}
-              />
-            ) : (
-              <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
-            )}
+            <Pressable style={styles.previewMediaContainer} onPress={handleClearSelection}>
+              {capturedMediaType === 'video' ? (
+                <Video
+                  source={{ uri: capturedMedia }}
+                  style={styles.previewImage}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={true}
+                  isLooping={true}
+                  useNativeControls={false}
+                />
+              ) : (
+                <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+              )}
+            </Pressable>
             
             {/* AR Overlay */}
             <AROverlay
@@ -742,6 +750,9 @@ export default function CameraScreen() {
               onUpdateElement={handleUpdateARElement}
               onDeleteElement={handleDeleteARElement}
               activeFilter={activeFilter?.data}
+              selectedElementId={selectedElementId}
+              onElementSelect={setSelectedElementId}
+              onClearSelection={handleClearSelection}
             />
           </ViewShot>
           
@@ -765,20 +776,10 @@ export default function CameraScreen() {
                 >
                   <Ionicons name="sparkles" size={20} color="#ffffff" />
                 </Pressable>
-                {arElements.length > 0 && (
-                  <Pressable style={styles.clearButton} onPress={clearAllARElements}>
-                    <Text style={styles.controlText}>🗑️</Text>
-                  </Pressable>
-                )}
               </View>
             </View>
 
-            {/* Caption Instructions */}
-            {arElements.some(el => el.id.startsWith('caption-')) && (
-              <View style={styles.captionInstructions}>
-                <Text style={styles.instructionText}>💡 Drag the caption to reposition it</Text>
-              </View>
-            )}
+
 
             {/* Bottom Action Buttons */}
             <View style={styles.bottomActions}>
@@ -1440,19 +1441,10 @@ const styles = StyleSheet.create({
   },
 
 
-  captionInstructions: {
-    backgroundColor: 'rgba(99,102,241,0.9)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    alignSelf: 'center',
-  },
-  instructionText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
+
+  previewMediaContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
 }); 

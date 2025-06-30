@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StoryData, StoryService } from '../lib/storyService';
 import StoryViewer from '../components/StoryViewer';
+import StorySnippetGenerator from '../components/StorySnippetGenerator';
 import { supabase } from '../lib/supabase';
 
 interface FlashbackSnap {
@@ -24,6 +25,10 @@ export default function StoriesScreen() {
   const [selectedStories, setSelectedStories] = useState<StoryData[]>([]);
   const [initialStoryIndex, setInitialStoryIndex] = useState(0);
   const [isStoryViewerVisible, setIsStoryViewerVisible] = useState(false);
+  
+  // Story Snippet Generator state
+  const [isSnippetGeneratorVisible, setIsSnippetGeneratorVisible] = useState(false);
+  const [selectedStoryForSnippet, setSelectedStoryForSnippet] = useState<StoryData | null>(null);
   
   // Analytics state
   const [storyInsights, setStoryInsights] = useState({
@@ -370,17 +375,27 @@ export default function StoriesScreen() {
   const formatTimeAgo = (dateString?: string) => {
     if (!dateString) return '';
     
-    const now = new Date();
-    const date = new Date(dateString);
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    // Simple: current time minus created time
+    const diffMs = Date.now() - new Date(dateString).getTime();
     
-    if (diffHours < 1) {
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      return `${diffMins}m ago`;
+    // If negative (future timestamp), just show "Just now"
+    if (diffMs < 0) return 'Just now';
+    
+    // Calculate time units
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    
+    if (diffSeconds < 60) {
+      return 'Just now';
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours}h ago`;
+    } else {
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
     }
-    
-    return `${diffHours}h ago`;
   };
 
   const getStoryThumbnail = (story: StoryData) => {
@@ -389,6 +404,17 @@ export default function StoriesScreen() {
       return firstSnap.media_url;
     }
     return null;
+  };
+
+  // Story Snippet Generator handlers
+  const handleGenerateSnippet = (story: StoryData) => {
+    setSelectedStoryForSnippet(story);
+    setIsSnippetGeneratorVisible(true);
+  };
+
+  const handleCloseSnippetGenerator = () => {
+    setIsSnippetGeneratorVisible(false);
+    setSelectedStoryForSnippet(null);
   };
 
   return (
@@ -431,23 +457,33 @@ export default function StoriesScreen() {
                   {myStories.map((story, index) => {
                     const thumbnailUrl = getStoryThumbnail(story);
                     return (
-                      <Pressable 
-                        key={story.id} 
-                        style={styles.myStoryCard}
-                        onPress={() => handleMyStoryPress(story, index)}
-                      >
-                        {thumbnailUrl ? (
-                          <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
-                        ) : (
-                          <View style={styles.storyThumbnailPlaceholder}>
-                            <Ionicons name="camera" size={24} color="#9CA3AF" />
+                      <View key={story.id} style={styles.myStoryContainer}>
+                        <Pressable 
+                          style={styles.myStoryCard}
+                          onPress={() => handleMyStoryPress(story, index)}
+                        >
+                          {thumbnailUrl ? (
+                            <Image source={{ uri: thumbnailUrl }} style={styles.storyThumbnailImage} />
+                          ) : (
+                            <View style={styles.storyThumbnailPlaceholder}>
+                              <Ionicons name="camera" size={24} color="#9CA3AF" />
+                            </View>
+                          )}
+                          <View style={styles.storyStats}>
+                            <Text style={styles.viewCount}>👀 {story.view_count || 0}</Text>
+                            <Text style={styles.timestamp}>{formatTimeAgo(story.created_at)}</Text>
                           </View>
-                        )}
-                        <View style={styles.storyStats}>
-                          <Text style={styles.viewCount}>👀 {story.view_count || 0}</Text>
-                          <Text style={styles.timestamp}>{formatTimeAgo(story.created_at)}</Text>
-                        </View>
-                      </Pressable>
+                        </Pressable>
+                        
+                        {/* Generate Travel Blog Button */}
+                        <Pressable 
+                          style={styles.snippetButton}
+                          onPress={() => handleGenerateSnippet(story)}
+                        >
+                          <Ionicons name="create-outline" size={16} color="#6366f1" />
+                          <Text style={styles.snippetButtonText}>Blog</Text>
+                        </Pressable>
+                      </View>
                     );
                   })}
                 </ScrollView>
@@ -639,6 +675,14 @@ export default function StoriesScreen() {
           // Immediately refresh stories when a story is viewed
           loadStories();
         }}
+      />
+
+      {/* Story Snippet Generator */}
+      <StorySnippetGenerator
+        visible={isSnippetGeneratorVisible}
+        onClose={handleCloseSnippetGenerator}
+        storyId={selectedStoryForSnippet?.id || ''}
+        storyTitle={`Story from ${selectedStoryForSnippet?.created_at ? formatTimeAgo(selectedStoryForSnippet.created_at) : ''}`}
       />
     </View>
   );
@@ -940,6 +984,30 @@ const styles = StyleSheet.create({
   flashbackSnapTimestamp: {
     color: '#9CA3AF',
     fontSize: 10,
+  },
+  
+  // Story Snippet Generator styles
+  myStoryContainer: {
+    flexDirection: 'column',
+    marginRight: 12,
+  },
+  snippetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderWidth: 1,
+    borderColor: '#6366f1',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginTop: 8,
+  },
+  snippetButtonText: {
+    color: '#6366f1',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
 
 }); 

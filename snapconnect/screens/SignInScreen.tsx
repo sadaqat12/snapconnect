@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, StyleSheet, Modal, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { supabase } from '../lib/supabase';
 
@@ -14,6 +14,7 @@ export default function SignInScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showDemoGuide, setShowDemoGuide] = useState(false);
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -35,6 +36,72 @@ export default function SignInScreen({ navigation }: Props) {
       setLoading(false);
     }
   };
+
+  const DemoGuideModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={showDemoGuide}
+      onRequestClose={() => setShowDemoGuide(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Welcome to SnapConnect! 🚀</Text>
+            <Pressable 
+              onPress={() => setShowDemoGuide(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </Pressable>
+          </View>
+          
+          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            <Text style={styles.modalSubtitle}>Your AI-Powered Travel Social Media Platform</Text>
+            
+            <View style={styles.featureSection}>
+              <Text style={styles.sectionTitle}>📸 Core Social Features</Text>
+              <Text style={styles.featureText}>• Send ephemeral snaps that disappear after viewing</Text>
+              <Text style={styles.featureText}>• Create and share travel stories with friends</Text>
+              <Text style={styles.featureText}>• AR filters and travel-themed effects</Text>
+              <Text style={styles.featureText}>• Real-time messaging and group chats</Text>
+            </View>
+
+            <View style={styles.featureSection}>
+              <Text style={styles.sectionTitle}>🤖 AI Travel Companion</Text>
+              <Text style={styles.featureText}>• Caption Compass: AI generates perfect captions for your travel photos</Text>
+              <Text style={styles.featureText}>• Travel Advisor: Chat with AI for expert travel advice, flight hacks, and hotel deals</Text>
+              <Text style={styles.featureText}>• Local Insights: Discover hidden gems and personalized recommendations</Text>
+              <Text style={styles.featureText}>• Culture & Cuisine Coach: Get cultural tips and food recommendations from photos</Text>
+            </View>
+
+            <View style={styles.featureSection}>
+              <Text style={styles.sectionTitle}>✨ Smart Features</Text>
+              <Text style={styles.featureText}>• Story Snippet Generator: Transform your stories into travel blog narratives</Text>
+              <Text style={styles.featureText}>• Itinerary Snapshots: Turn travel plans into shareable infographics</Text>
+              <Text style={styles.featureText}>• Location-based recommendations with GPS integration</Text>
+              <Text style={styles.featureText}>• Personalized content based on your travel preferences</Text>
+            </View>
+
+            <View style={styles.featureSection}>
+              <Text style={styles.sectionTitle}>🎯 How It Works</Text>
+              <Text style={styles.featureText}>1. Sign up and set your travel preferences</Text>
+              <Text style={styles.featureText}>2. Connect with friends and start sharing travel moments</Text>
+              <Text style={styles.featureText}>3. Use AI features to enhance your content and discover new places</Text>
+              <Text style={styles.featureText}>4. Explore the Discover page for travel insights and advice</Text>
+            </View>
+
+            <Pressable 
+              onPress={() => setShowDemoGuide(false)}
+              style={styles.modalButton}
+            >
+              <Text style={styles.modalButtonText}>Get Started!</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
 
   return (
     <KeyboardAvoidingView 
@@ -90,6 +157,16 @@ export default function SignInScreen({ navigation }: Props) {
           </Pressable>
         </View>
 
+        {/* Demo Guide Button */}
+        <View style={styles.demoGuideContainer}>
+          <Pressable 
+            onPress={() => setShowDemoGuide(true)}
+            style={styles.demoGuideButton}
+          >
+            <Text style={styles.demoGuideText}>📱 Demo Guide</Text>
+          </Pressable>
+        </View>
+
         {/* Footer */}
         <View style={styles.footer}>
           <Pressable onPress={() => navigation.navigate('SignUp')}>
@@ -100,6 +177,8 @@ export default function SignInScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </View>
+
+      <DemoGuideModal />
     </KeyboardAvoidingView>
   );
 }
@@ -173,6 +252,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 18,
   },
+  demoGuideContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  demoGuideButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#6366f1',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  demoGuideText: {
+    color: '#6366f1',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   footer: {
     marginTop: 32,
     alignItems: 'center',
@@ -185,5 +281,88 @@ const styles = StyleSheet.create({
   footerLink: {
     color: '#6366f1',
     fontWeight: '600',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    paddingBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    flex: 1,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#333333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  modalScroll: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  featureSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 12,
+  },
+  featureText: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  modalButton: {
+    backgroundColor: '#6366f1',
+    borderRadius: 12,
+    paddingVertical: 16,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    textAlign: 'center',
+    fontSize: 18,
   },
 }); 
