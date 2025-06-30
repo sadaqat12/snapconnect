@@ -206,7 +206,7 @@ export class StoryService {
   }
 
   /**
-   * Get all stories visible to the current user (friends + own)
+   * Get current user's own stories only
    */
   static async getUserStories(): Promise<StoryData[]> {
     try {
@@ -215,13 +215,14 @@ export class StoryService {
 
       console.log('🔍 Fetching stories for user:', user.id);
 
-      // Get stories from friends and own stories
+      // Get only current user's stories
       const { data: stories, error } = await supabase
         .from('stories')
         .select(`
           *,
           creator:users(id, name, username, avatar_url)
         `)
+        .eq('creator_id', user.id) // ✅ Only get current user's stories
         .gte('expires_at', new Date().toISOString()) // Only non-expired stories
         .order('created_at', { ascending: false });
 
@@ -350,14 +351,8 @@ export class StoryService {
 
             console.log(`Story ${story.id} - snaps:`, snapsData?.length || 0);
 
-            // Use the new function to check if story is fully viewed
-            const { data: isViewedResult, error: viewedError } = await supabase
-              .rpc('is_story_fully_viewed', {
-                story_id_param: story.id,
-                user_id_param: user.id
-              });
-
-            const isViewed = viewedError ? (story.viewers?.includes(user.id) || false) : (isViewedResult || false);
+            // Simple logic: check if current user is in the viewers array
+            const isViewed = story.viewers?.includes(user.id) || false;
             
             console.log(`Story ${story.id} enrichment:`, {
               storyId: story.id,
@@ -366,8 +361,6 @@ export class StoryService {
               viewersCount: story.viewers?.length || 0,
               currentUserId: user.id,
               isViewed,
-              isViewedFromFunction: isViewedResult,
-              viewedError: viewedError?.message,
               viewersArray: JSON.stringify(story.viewers)
             });
 
@@ -438,14 +431,8 @@ export class StoryService {
         console.warn('Error fetching snaps for story:', snapsError);
       }
 
-      // Use the new function to check if story is fully viewed
-      const { data: isViewedResult, error: viewedError } = await supabase
-        .rpc('is_story_fully_viewed', {
-          story_id_param: data.id,
-          user_id_param: user.id
-        });
-
-      const isViewed = viewedError ? (data.viewers?.includes(user.id) || false) : (isViewedResult || false);
+      // Simple logic: check if current user is in the viewers array
+      const isViewed = data.viewers?.includes(user.id) || false;
 
       return {
         ...data as StoryData,
@@ -467,7 +454,7 @@ export class StoryService {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('User not authenticated');
 
-      console.log(`Marking story ${storyId} as viewed by user ${user.id}`);
+      console.log(`🔥 MARK VIEWED: Story ${storyId} by user ${user.id}`);
 
       // Get current story viewers
       const { data: story, error: fetchError } = await supabase
@@ -478,17 +465,22 @@ export class StoryService {
 
       if (fetchError) {
         if (fetchError.code === 'PGRST116') {
-          console.log(`Story ${storyId} not found or expired`);
+          console.log(`❌ Story ${storyId} not found or expired`);
           return;
         }
+        console.error(`❌ Error fetching story ${storyId}:`, fetchError);
         throw fetchError;
       }
+
+      console.log(`📋 Current viewers for story ${storyId}:`, story.viewers);
 
       // Simple logic: check if user is already in viewers array
       const currentViewers = story.viewers || [];
       if (!currentViewers.includes(user.id)) {
         // Add user to viewers array
         const newViewers = [...currentViewers, user.id];
+        
+        console.log(`🚀 Adding user ${user.id} to viewers. New array:`, newViewers);
         
         // Update with PostgreSQL UUID casting
         const { error: updateError } = await supabase
@@ -499,16 +491,16 @@ export class StoryService {
           .eq('id', storyId);
 
         if (updateError) {
-          console.error('Error updating viewers:', updateError);
+          console.error(`❌ FAILED to update viewers:`, updateError);
           // Don't throw - just log so story viewing continues
         } else {
-          console.log(`✅ Added user ${user.id} to story ${storyId} viewers`);
+          console.log(`✅ SUCCESS: Added user ${user.id} to story ${storyId} viewers`);
         }
       } else {
-        console.log(`User ${user.id} already viewed story ${storyId}`);
+        console.log(`ℹ️ User ${user.id} already viewed story ${storyId}`);
       }
     } catch (error) {
-      console.error('Mark story as viewed error:', error);
+      console.error(`❌ MARK VIEWED ERROR for story ${storyId}:`, error);
       // Don't throw - just log so story viewing continues
     }
   }
