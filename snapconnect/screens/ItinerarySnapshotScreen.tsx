@@ -11,7 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 import { Ionicons } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -22,6 +22,10 @@ import {
   TripOverviewTemplate, 
   StoryFormatTemplate 
 } from '../components/ItineraryTemplates';
+
+// Story format dimensions (9:16 aspect ratio)
+const STORY_WIDTH = screenWidth * 0.8;
+const STORY_HEIGHT = STORY_WIDTH * (16 / 9);
 
 interface ItineraryItem {
   id: string;
@@ -46,6 +50,7 @@ export default function ItinerarySnapshotScreen() {
   const [selectedTemplate, setSelectedTemplate] = useState<'overview' | 'story'>('overview');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSharingToStory, setIsSharingToStory] = useState(false);
+  const [isCapturingForStory, setIsCapturingForStory] = useState(false);
   const viewShotRef = useRef<ViewShot>(null);
 
   const sampleItinerary = `March 15, 2024
@@ -370,20 +375,35 @@ March 18, 2024
     setIsSharingToStory(true);
 
     try {
+      console.log('📸 Capturing itinerary snapshot for story...');
+      
+      // Enable story capture mode to apply story dimensions
+      setIsCapturingForStory(true);
+      
+      // Wait for the layout to settle with story dimensions
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Capture the view as an image
       const uri = await viewShotRef.current?.capture?.();
+      
+      // Disable story capture mode to restore flexible layout
+      setIsCapturingForStory(false);
+      
       if (!uri) {
         throw new Error('Failed to capture snapshot');
       }
 
+      console.log('✅ Snapshot captured:', uri);
+
       // Create a snap from the captured image
+      console.log('📤 Creating snap from captured image...');
       const snap = await SnapService.createSnapFromMedia(
         uri,
         'photo',
         {
           caption: '✈️ My Travel Itinerary\n\nGenerated with SnapConnect',
           includeLocation: false,
-          duration: 10,
+          duration: 15, // Longer duration for itinerary reading
           recipients: [], // Stories don't have direct recipients
         },
         (stage, progress) => {
@@ -391,8 +411,29 @@ March 18, 2024
         }
       );
 
-      // Add snap to story
-      const story = await StoryService.addSnapToStory(snap.id!);
+      console.log('✅ Snap created:', snap.id);
+
+      // Add snap to story with retry logic
+      console.log('📚 Adding snap to story...');
+      let retryCount = 0;
+      const maxRetries = 3;
+      let story;
+
+      while (retryCount < maxRetries) {
+        try {
+          story = await StoryService.addSnapToStory(snap.id!);
+          console.log('✅ Story created/updated:', story.id);
+          break;
+        } catch (error: any) {
+          retryCount++;
+          console.warn(`Retry ${retryCount}/${maxRetries} for story creation:`, error);
+          if (retryCount >= maxRetries) {
+            throw error;
+          }
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
 
       Alert.alert(
         'Added to Story!',
@@ -402,11 +443,12 @@ March 18, 2024
           { text: 'Great!', style: 'cancel' }
         ]
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sharing to story:', error);
-      Alert.alert('Error', 'Failed to share to story. Please try again.');
+      Alert.alert('Error', `Failed to share to story: ${error?.message || error}. Please try again.`);
     } finally {
       setIsSharingToStory(false);
+      setIsCapturingForStory(false); // Ensure it's reset
     }
   };
 
@@ -635,9 +677,11 @@ March 18, 2024
             options={{ 
               format: "jpg", 
               quality: 0.9,
-              result: "tmpfile"
+              result: "tmpfile",
+              // Remove fixed dimensions to allow flexible preview
+              // The capture will scale appropriately for stories
             }}
-            style={styles.viewShotContainer}
+            style={isCapturingForStory ? styles.viewShotStoryMode : styles.viewShotContainer}
           >
             {selectedTemplate === 'overview' && (
               <TripOverviewTemplate 
@@ -921,8 +965,26 @@ const styles = StyleSheet.create({
   viewShotContainer: {
     alignItems: 'center',
     marginTop: 16,
-    backgroundColor: 'transparent',
-    maxWidth: screenWidth * 0.65, // Much smaller to ensure story compatibility
+    backgroundColor: '#0a0a0a', // Solid background for better capture
     alignSelf: 'center',
+    borderRadius: 20,
+    // Remove fixed dimensions to allow flexible preview
+    // The capture will scale appropriately for stories
+    minHeight: 400,
+    maxWidth: screenWidth * 0.9,
+    padding: 16,
+  },
+  viewShotStoryMode: {
+    alignItems: 'center',
+    marginTop: 16,
+    backgroundColor: '#0a0a0a',
+    alignSelf: 'center',
+    borderRadius: 20,
+    // Story-optimized dimensions for capture
+    width: STORY_WIDTH,
+    height: STORY_HEIGHT,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    justifyContent: 'flex-start',
   },
 }); 

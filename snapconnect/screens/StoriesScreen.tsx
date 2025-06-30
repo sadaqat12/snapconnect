@@ -375,17 +375,27 @@ export default function StoriesScreen() {
   const formatTimeAgo = (dateString?: string) => {
     if (!dateString) return '';
     
-    const now = new Date();
-    const date = new Date(dateString);
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    // Simple: current time minus created time
+    const diffMs = Date.now() - new Date(dateString).getTime();
     
-    if (diffHours < 1) {
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      return `${diffMins}m ago`;
+    // If negative (future timestamp), just show "Just now"
+    if (diffMs < 0) return 'Just now';
+    
+    // Calculate time units
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    
+    if (diffSeconds < 60) {
+      return 'Just now';
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours}h ago`;
+    } else {
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
     }
-    
-    return `${diffHours}h ago`;
   };
 
   const getStoryThumbnail = (story: StoryData) => {

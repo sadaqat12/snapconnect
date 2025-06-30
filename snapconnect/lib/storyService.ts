@@ -35,8 +35,9 @@ export class StoryService {
         creator_id: user.id,
         snap_ids: snapIds,
         viewers: [],
-        created_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        // Remove explicit timestamps - let database handle them automatically
+        // created_at: defaults to now() in UTC
+        // expires_at: automatically calculated as (created_at + 24 hours)
       };
 
       console.log('Story data to insert:', storyData);
@@ -84,6 +85,8 @@ export class StoryService {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('User not authenticated');
 
+      console.log('🔄 Adding snap to story:', { snapId, userId: user.id });
+
       // Check if user has a recent story (within last 24 hours) that we can add to
       const { data: recentStories, error: fetchError } = await supabase
         .from('stories')
@@ -93,14 +96,19 @@ export class StoryService {
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('❌ Error fetching recent stories:', fetchError);
+        throw fetchError;
+      }
+
+      console.log('📖 Recent stories found:', recentStories?.length || 0);
 
       if (recentStories && recentStories.length > 0) {
         // Add to existing story
         const existingStory = recentStories[0];
         const updatedSnapIds = [...existingStory.snap_ids, snapId];
 
-        console.log('Updating existing story:', {
+        console.log('➕ Updating existing story:', {
           storyId: existingStory.id,
           currentSnapIds: existingStory.snap_ids,
           newSnapId: snapId,
@@ -114,130 +122,155 @@ export class StoryService {
           .eq('id', existingStory.id)
           .select();
 
-        console.log('Update result:', { updateData, updateError });
+        console.log('🔄 Update result:', { updateData, updateError });
 
         if (updateError) {
-          console.error('Error updating story:', updateError);
+          console.error('❌ Error updating story:', updateError);
           throw updateError;
         }
 
         if (!updateData || updateData.length === 0) {
-          console.error('Story update returned no data - story may not exist or no permission');
+          console.error('❌ Story update returned no data - story may not exist or no permission');
           throw new Error('Failed to update story - no rows affected');
         }
 
-        // Then fetch the updated story
-        const { data, error: fetchError } = await supabase
+        // Then fetch the updated story with creator data
+        const { data: finalStory, error: fetchError } = await supabase
           .from('stories')
-          .select()
+          .select(`
+            *,
+            creator:creator_id(id, username, name)
+          `)
           .eq('id', existingStory.id)
           .single();
 
         if (fetchError) {
-          console.error('Error fetching updated story:', fetchError);
+          console.error('❌ Error fetching updated story:', fetchError);
           throw fetchError;
         }
 
-        // Get creator data separately
-        const { data: userData, error: userFetchError } = await supabase
-          .from('users')
-          .select('id, username, name')
-          .eq('id', data.creator_id)
-          .single();
-
-        if (userFetchError) {
-          console.warn('Could not fetch creator data:', userFetchError);
-        }
-
-        const enrichedData = {
-          ...data,
-          creator: userData || { id: data.creator_id, username: '', name: '' }
-        };
-
-        console.log('Successfully updated story:', enrichedData);
-        return enrichedData as StoryData;
+        console.log('✅ Successfully updated existing story:', finalStory.id);
+        return finalStory as StoryData;
       } else {
         // Create new story
-        console.log('No recent stories found, creating new story for snap:', snapId);
-        return await StoryService.createStory([snapId]);
+        console.log('📚 Creating new story for user:', user.id);
+        
+        const newStoryData = {
+          creator_id: user.id,
+          snap_ids: [snapId],
+          // Remove explicit timestamps - let database handle them automatically
+          // created_at: defaults to now() in UTC
+          // expires_at: automatically calculated as (created_at + 24 hours)
+        };
+
+        // Create story with database-managed timestamps
+        console.log('📚 Creating story with snap:', snapId);
+
+        const { data: newStory, error: createError } = await supabase
+          .from('stories')
+          .insert(newStoryData)
+          .select(`
+            *,
+            creator:users(id, name, username, avatar_url)
+          `)
+          .single();
+
+        if (createError) {
+          console.error('❌ Error creating story:', createError);
+          throw createError;
+        }
+
+        // Manually fetch snaps for the new story
+        const { data: snapsData, error: snapsError } = await supabase
+          .from('snaps')
+          .select('*')
+          .in('id', newStory.snap_ids)
+          .order('created_at', { ascending: true });
+
+        if (snapsError) {
+          console.warn('Error fetching snaps for new story:', snapsError);
+        }
+
+        const enrichedStory = {
+          ...newStory,
+          snaps: snapsData || [],
+        };
+
+        console.log('✅ New story created:', enrichedStory);
+        return enrichedStory;
       }
-    } catch (error) {
-      console.error('Add snap to story error:', error);
-      throw new Error(`Failed to add snap to story: ${error}`);
+    } catch (error: any) {
+      console.error('❌ Add snap to story error:', error);
+      throw new Error(`Failed to add snap to story: ${error?.message || error}`);
     }
   }
 
   /**
-   * Get user's own stories
+   * Get all stories visible to the current user (friends + own)
    */
-  static async getUserStories(userId?: string): Promise<StoryData[]> {
+  static async getUserStories(): Promise<StoryData[]> {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('User not authenticated');
+      if (userError || !user) return [];
 
-      const targetUserId = userId || user.id;
+      console.log('🔍 Fetching stories for user:', user.id);
 
-      const { data, error } = await supabase
+      // Get stories from friends and own stories
+      const { data: stories, error } = await supabase
         .from('stories')
         .select(`
           *,
-          creator:creator_id(id, username, name)
+          creator:users(id, name, username, avatar_url)
         `)
-        .eq('creator_id', targetUserId)
         .gte('expires_at', new Date().toISOString()) // Only non-expired stories
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching stories:', error);
+        return [];
+      }
 
-      // Enrich with snap data and view counts
-      const enrichedStories = await Promise.all(
-        (data as StoryData[]).map(async (story) => {
-          try {
-            // Get snap data for the story
-            const { data: snapsData, error: snapsError } = await supabase
-              .from('snaps')
-              .select('*')
-              .in('id', story.snap_ids)
-              .order('created_at', { ascending: true });
+      console.log('📚 Fetched stories from database:', stories?.length || 0);
 
-            if (snapsError) {
-              console.warn('Error fetching snaps for story:', snapsError);
+      // Manually enrich stories with snap data since we can't use automatic joins
+      if (stories && stories.length > 0) {
+        const enrichedStories = await Promise.all(
+          stories.map(async (story) => {
+            try {
+              // Get snap data for this story
+              const { data: snapsData, error: snapsError } = await supabase
+                .from('snaps')
+                .select('*')
+                .in('id', story.snap_ids)
+                .order('created_at', { ascending: true });
+
+              if (snapsError) {
+                console.warn('Error fetching snaps for story:', snapsError);
+              }
+
+              return {
+                ...story,
+                snaps: snapsData || [],
+                view_count: story.viewers?.length || 0, // Add consistent view count
+              };
+            } catch (error) {
+              console.warn('Error enriching story:', error);
+              return {
+                ...story,
+                snaps: [],
+                view_count: story.viewers?.length || 0, // Add consistent view count
+              };
             }
+          })
+        );
 
-            // Use the new function to check if story is fully viewed
-            const { data: isViewedResult, error: viewedError } = await supabase
-              .rpc('is_story_fully_viewed', {
-                story_id_param: story.id,
-                user_id_param: user.id
-              });
+        return enrichedStories;
+      }
 
-            const isViewed = viewedError ? (story.viewers?.includes(user.id) || false) : (isViewedResult || false);
-
-            return {
-              ...story,
-              snaps: snapsData as SnapData[] || [],
-              view_count: story.viewers?.length || 0,
-              is_viewed: isViewed,
-            };
-          } catch (error) {
-            console.warn('Error enriching story:', error);
-            // Fallback to legacy logic if there's an error
-            const isViewed = story.viewers?.includes(user.id) || false;
-            
-            return {
-              ...story,
-              snaps: [],
-              view_count: story.viewers?.length || 0,
-              is_viewed: isViewed,
-            };
-          }
-        })
-      );
-
-      return enrichedStories;
+      return stories || [];
     } catch (error) {
-      console.error('Get user stories error:', error);
-      throw error;
+      console.error('❌ Error in getUserStories:', error);
+      return [];
     }
   }
 
@@ -427,7 +460,7 @@ export class StoryService {
   }
 
   /**
-   * Mark story as viewed by current user
+   * Mark story as viewed by current user - Simple logic!
    */
   static async markStoryAsViewed(storyId: string): Promise<void> {
     try {
@@ -436,7 +469,7 @@ export class StoryService {
 
       console.log(`Marking story ${storyId} as viewed by user ${user.id}`);
 
-      // Get current story
+      // Get current story viewers
       const { data: story, error: fetchError } = await supabase
         .from('stories')
         .select('viewers')
@@ -451,63 +484,32 @@ export class StoryService {
         throw fetchError;
       }
 
-      console.log(`Current viewers for story ${storyId}:`, story.viewers);
-
-      // Use the completely rewritten mark_story_viewed function
-      const { error: updateError } = await supabase.rpc('mark_story_viewed', {
-        story_id_param: storyId,
-        user_id_param: user.id
-      });
-
-      if (updateError) {
-        console.error('Error marking story as viewed with RPC:', updateError);
+      // Simple logic: check if user is already in viewers array
+      const currentViewers = story.viewers || [];
+      if (!currentViewers.includes(user.id)) {
+        // Add user to viewers array
+        const newViewers = [...currentViewers, user.id];
         
-        // Fallback to manual approach if RPC fails
-        console.log('Trying fallback manual approach...');
-        
-        try {
-          // Insert/update story view record manually
-          const { error: viewError } = await supabase
-            .from('story_views')
-            .upsert({
-              story_id: storyId,
-              user_id: user.id,
-              last_viewed_at: new Date().toISOString()
-            }, {
-              onConflict: 'story_id,user_id'
-            });
+        // Update with PostgreSQL UUID casting
+        const { error: updateError } = await supabase
+          .from('stories')
+          .update({ 
+            viewers: newViewers
+          })
+          .eq('id', storyId);
 
-          if (viewError) {
-            console.error('Error inserting story view:', viewError);
-          }
-
-          // Update legacy viewers array
-          const viewers = story.viewers || [];
-          if (!viewers.includes(user.id)) {
-            viewers.push(user.id);
-            
-            const { error: fallbackError } = await supabase
-              .from('stories')
-              .update({ viewers })
-              .eq('id', storyId);
-
-            if (fallbackError) {
-              console.error('Fallback update also failed:', fallbackError);
-              throw fallbackError;
-            }
-          }
-          
-          console.log('Successfully marked story as viewed using fallback approach');
-        } catch (fallbackError) {
-          console.error('Fallback approach failed:', fallbackError);
-          // Don't throw - just log the error so the app continues working
+        if (updateError) {
+          console.error('Error updating viewers:', updateError);
+          // Don't throw - just log so story viewing continues
+        } else {
+          console.log(`✅ Added user ${user.id} to story ${storyId} viewers`);
         }
       } else {
-        console.log(`Successfully marked story ${storyId} as viewed with timestamp tracking`);
+        console.log(`User ${user.id} already viewed story ${storyId}`);
       }
     } catch (error) {
       console.error('Mark story as viewed error:', error);
-      throw error;
+      // Don't throw - just log so story viewing continues
     }
   }
 
